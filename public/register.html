@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro - Sistema de Outdoors</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #3498db, #2c3e50);
+            padding: 20px;
+        }
+
+        .register-container {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .register-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .register-title {
+            font-size: 28px;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .register-subtitle {
+            color: #7f8c8d;
+            font-size: 16px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #2c3e50;
+            font-weight: 500;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            border-color: #3498db;
+            outline: none;
+        }
+
+        .register-btn {
+            width: 100%;
+            padding: 12px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .register-btn:hover {
+            background: #2980b9;
+        }
+
+        .error-message {
+            background: #e74c3c;
+            color: white;
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+            text-align: center;
+        }
+
+        .login-link {
+            text-align: center;
+            margin-top: 20px;
+            color: #7f8c8d;
+        }
+
+        .login-link a {
+            color: #3498db;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .login-link a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 480px) {
+            .register-container {
+                padding: 20px;
+            }
+
+            .register-title {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="register-container">
+        <div class="register-header">
+            <h1 class="register-title">Sistema de Outdoors</h1>
+            <p class="register-subtitle">Crie sua conta para começar</p>
+        </div>
+        
+        <div class="error-message" id="errorMessage"></div>
+        
+        <form id="registerForm" onsubmit="register(event)">
+            <div class="form-group">
+                <label for="name">Nome</label>
+                <input type="text" id="name" required>
+            </div>
+
+            <div class="form-group">
+                <label for="email">E-mail</label>
+                <input type="email" id="email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Senha</label>
+                <input type="password" id="password" required minlength="6">
+            </div>
+            
+            <button type="submit" class="register-btn">Registrar</button>
+        </form>
+
+        <div class="login-link">
+            Já tem uma conta? <a href="/index.html">Faça login</a>
+        </div>
+    </div>
+
+    <script>
+        async function register(event) {
+            event.preventDefault();
+            
+            const name = document.getElementById('name').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            const errorMessage = document.getElementById('errorMessage');
+            
+            console.log('Dados do formulário:', {
+                name: name ? 'preenchido' : 'vazio',
+                email: email ? 'preenchido' : 'vazio',
+                password: password ? 'preenchido' : 'vazio'
+            });
+
+            // Validações básicas
+            if (!name) {
+                errorMessage.textContent = 'Por favor, insira seu nome';
+                errorMessage.style.display = 'block';
+                return;
+            }
+
+            if (!email) {
+                errorMessage.textContent = 'Por favor, insira seu e-mail';
+                errorMessage.style.display = 'block';
+                return;
+            }
+
+            if (!password) {
+                errorMessage.textContent = 'Por favor, insira sua senha';
+                errorMessage.style.display = 'block';
+                return;
+            }
+
+            if (password.length < 6) {
+                errorMessage.textContent = 'A senha deve ter pelo menos 6 caracteres';
+                errorMessage.style.display = 'block';
+                return;
+            }
+
+            try {
+                console.log('Enviando dados de registro para o servidor...');
+                const response = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        nome: name,
+                        email: email,
+                        password: password
+                    })
+                });
+                
+                console.log('Resposta do servidor recebida:', response.status);
+                const data = await response.json();
+                console.log('Dados da resposta:', data);
+                
+                if (response.ok) {
+                    console.log('Registro bem-sucedido!');
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    window.location.href = '/dashboard.html';
+                } else {
+                    console.error('Erro na resposta:', data);
+                    errorMessage.textContent = data.error || 'Erro ao registrar';
+                    errorMessage.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Erro ao registrar:', error);
+                errorMessage.textContent = 'Erro ao conectar com o servidor';
+                errorMessage.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html> 
