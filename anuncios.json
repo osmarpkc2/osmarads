@@ -1,0 +1,30 @@
+[
+  {
+    "_id": "5be9167d-ab46-4407-ab52-ca6a191260a7",
+    "titulo": "anuncio 2",
+    "tipo": "video",
+    "duracao": "10",
+    "arquivo": "430ca4cc-70f9-4cb3-929a-0b50e4fff9c1_anuncio_3.mp4"
+  },
+  {
+    "_id": "3aea3501-1efa-4f7d-861d-e5d2d0e1558b",
+    "titulo": "anuncio 1",
+    "tipo": "imagem",
+    "duracao": "10",
+    "arquivo": "630df436-8bc9-4c5d-b60b-fb766a1e7921_Captura_de_tela_2025-04-10_134540.png"
+  },
+  {
+    "_id": "c9d1de7f-1658-4924-90d7-5e5f0de7b674",
+    "titulo": "anuncio 3",
+    "tipo": "video",
+    "duracao": "10",
+    "arquivo": "b2dceb22-9a6e-4231-8909-04bc822f24bc_Filme_comercial_15_segundos__Casafinna__TV_Tem.mp4"
+  },
+  {
+    "_id": "8511c4d0-7aa0-45c9-adfa-fde61bc8ad3d",
+    "titulo": "anuncio 4",
+    "tipo": "video",
+    "duracao": "15",
+    "arquivo": "b9425386-ada3-4dad-a521-d805e84e92b4_Video_Be_Brasil_30_segundos_-LEGENDAS_EM_INGLES.mp4"
+  }
+]

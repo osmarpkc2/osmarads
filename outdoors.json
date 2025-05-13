@@ -1,0 +1,52 @@
+[
+  {
+    "id": 1,
+    "nome": "outdoor",
+    "localizacao": "praça",
+    "tipo": "LED"
+  },
+  {
+    "id": 2,
+    "nome": "ms",
+    "localizacao": "praça",
+    "tipo": "LCD",
+    "usuario": "osmaroliveira570@gmail.com",
+    "anuncios": [
+      "3aea3501-1efa-4f7d-861d-e5d2d0e1558b",
+      "5be9167d-ab46-4407-ab52-ca6a191260a7"
+    ],
+    "anuncios_vinculados": {
+      "444983dc-8350-480e-867f-532865b46f4d": {
+        "titulo": "anuncio 1",
+        "duracao": "3"
+      },
+      "5be9167d-ab46-4407-ab52-ca6a191260a7": {
+        "titulo": "anuncio 2",
+        "duracao": "5"
+      },
+      "3aea3501-1efa-4f7d-861d-e5d2d0e1558b": {
+        "titulo": "anuncio 1",
+        "duracao": "5"
+      }
+    }
+  },
+  {
+    "id": 3,
+    "nome": "tv",
+    "localizacao": "reginaldo",
+    "tipo": "LED",
+    "usuario": "osmaroliveira570@gmail.com",
+    "anuncios": [
+      "8511c4d0-7aa0-45c9-adfa-fde61bc8ad3d",
+      "3aea3501-1efa-4f7d-861d-e5d2d0e1558b",
+      "c9d1de7f-1658-4924-90d7-5e5f0de7b674",
+      "5be9167d-ab46-4407-ab52-ca6a191260a7"
+    ],
+    "anuncios_vinculados": {
+      "c9d1de7f-1658-4924-90d7-5e5f0de7b674": {
+        "titulo": "anuncio 3",
+        "duracao": "8"
+      }
+    }
+  }
+]

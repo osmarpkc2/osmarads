@@ -4,61 +4,67 @@ Sistema web para gerenciamento de anúncios em outdoors digitais, permitindo que
 
 ## Funcionalidades
 
-- Autenticação de usuários (clientes e administradores)
+- Autenticação de usuários (clientes)
 - Cadastro e gerenciamento de outdoors
 - Upload e gerenciamento de anúncios (imagens e vídeos)
 - Vinculação de anúncios aos outdoors
-- Visualização pública dos anúncios em tela cheia
+- Visualização dos anúncios em tela cheia
 - Interface responsiva e amigável
+
+## Tecnologias Utilizadas
+
+- **Backend:** Python (Flask)
+- **Frontend:** HTML, CSS, JavaScript
+- **Banco de Dados:** Arquivos JSON locais (`usuarios.json`, `outdoors.json`, `anuncios.json`)
 
 ## Requisitos
 
-- Node.js 14.x ou superior
-- MongoDB
-- NPM ou Yarn
+- Python 3.8 ou superior
+- Flask (`pip install flask`)
 
-## Instalação
+## Instalação e Execução
 
 1. Clone o repositório:
 ```bash
 git clone [URL_DO_REPOSITORIO]
-cd outdoor-digital
+cd outdoor
 ```
 
-2. Instale as dependências:
+2. Instale as dependências do Python:
 ```bash
-npm install
+pip install flask
 ```
 
-3. Configure as variáveis de ambiente:
-Crie um arquivo `.env` na raiz do projeto com as seguintes variáveis:
-```
-MONGODB_URI=sua_url_do_mongodb
-JWT_SECRET=sua_chave_secreta
-PORT=3000
-```
-
-4. Crie a pasta para uploads:
+3. Inicie o servidor Flask:
 ```bash
-mkdir -p public/uploads
+python app.py
 ```
 
-5. Inicie o servidor:
-```bash
-npm start
+4. Acesse o sistema pelo navegador:
 ```
-
-Para desenvolvimento, use:
-```bash
-npm run dev
+http://localhost:3000
 ```
 
 ## Uso
 
-1. Acesse o sistema em `http://localhost:3000`
-2. Registre-se como um novo cliente
-3. Faça login com suas credenciais
-4. Comece a cadastrar seus outdoors e anúncios
+1. Registre-se como um novo cliente pelo `index.html` (aba Registro).
+2. Faça login com suas credenciais.
+3. Cadastre e gerencie seus outdoors e anúncios.
+4. Vincule anúncios aos outdoors conforme necessário.
+
+## Estrutura dos Arquivos
+- `app.py`: Backend Flask e rotas da API
+- `public/index.html`: Página inicial com login e registro
+- `public/dashboard.html`: Painel principal do usuário
+- `usuarios.json`, `outdoors.json`, `anuncios.json`: Armazenamento local dos dados
+
+## Observações
+- As senhas dos usuários são armazenadas em texto simples (apenas para fins didáticos). Para produção, recomenda-se utilizar hash de senha.
+- O sistema não utiliza MongoDB nem Node.js.
+- O cadastro de usuários é feito apenas pelo `index.html`.
+
+## Licença
+Projeto didático para gerenciamento de outdoors digitais.
 
 ### Como Usar
 
