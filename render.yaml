@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: outdoor-digital
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: FLASK_APP
+        value: app.py
+    healthCheckPath: /health
+    instanceCount: 1
+    instanceSize: free
+    autoDeploy: true
+    environment:
+      - key: PYTHONPATH
+        value: .

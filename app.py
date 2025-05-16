@@ -1,8 +1,16 @@
 from flask import Flask, request, jsonify, send_from_directory
+from flask_socketio import SocketIO, emit
 import json
 import os
 
+# Configurar diretório de uploads
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
 app = Flask(__name__, static_folder='public')
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+socketio = SocketIO(app, cors_allowed_origins="*")
 USERS_FILE = os.path.join(os.path.dirname(__file__), 'usuarios.json')
 
 # Utilitários para ler/salvar usuários
@@ -57,10 +65,15 @@ def login():
 def index():
     return send_from_directory(app.static_folder, 'index.html')
 
+# Rota para servir arquivos de upload
+@app.route('/api/uploads/<filename>')
+def serve_upload(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 # Rota para servir qualquer arquivo da pasta public
 @app.route('/<path:filename>')
 def serve_static(filename):
-    return send_from_directory(app.static_folder, filename)
+    return send_from_directory('public', filename)
 
 # Utilitários para ler/salvar outdoors
 OUTDOORS_FILE = os.path.join(os.path.dirname(__file__), 'outdoors.json')
@@ -166,28 +179,33 @@ def vincular_anuncio(outdoor_id, anuncio_id):
     if anuncio_id not in outdoor['anuncios']:
         outdoor['anuncios'].append(anuncio_id)
         save_outdoors(outdoors)
+        # Notificar players sobre a atualização
+        socketio.start_background_task(notify_outdoor_update, outdoor_id)
     return jsonify({'message': 'Anúncio vinculado com sucesso!'})
 
 # Listar anúncios vinculados a um outdoor
 @app.route('/api/outdoors/<int:outdoor_id>/anuncios', methods=['GET'])
 def get_anuncios_vinculados(outdoor_id):
-    outdoors = read_outdoors()
-    anuncios = read_anuncios()
-    outdoor = next((o for o in outdoors if o['id'] == outdoor_id), None)
-    if not outdoor:
-        return jsonify({'error': 'Outdoor não encontrado'}), 404
-    if 'anuncios' not in outdoor or not outdoor['anuncios']:
-        return jsonify([])
-    # Retorna os anúncios na ordem definida em outdoor['anuncios']
-    anuncios_dict = {a['_id']: a for a in anuncios}
-    vinculados_ordenados = []
-    for aid in outdoor['anuncios']:
-        if aid in anuncios_dict:
-            anuncio = anuncios_dict[aid].copy()
-            # Se houver sobrescrita local, aplica
-            if 'anuncios_vinculados' in outdoor and aid in outdoor['anuncios_vinculados']:
-                anuncio.update(outdoor['anuncios_vinculados'][aid])
-            vinculados_ordenados.append(anuncio)
+    try:
+        outdoors = read_outdoors()
+        anuncios = read_anuncios()
+        outdoor = next((o for o in outdoors if o['id'] == outdoor_id), None)
+        if not outdoor:
+            return jsonify({'error': 'Outdoor não encontrado'}), 404
+        
+        if 'anuncios' not in outdoor or not outdoor['anuncios']:
+            return jsonify([])
+        
+        # Retorna os anúncios na ordem definida em outdoor['anuncios']
+        vinculados_ordenados = []
+        for aid in outdoor['anuncios']:
+            anuncio = next((a for a in anuncios if a['_id'] == aid), None)
+            if anuncio:
+                vinculados_ordenados.append(anuncio)
+        
+        return jsonify(vinculados_ordenados)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
     return jsonify(vinculados_ordenados)
 
 @app.route('/api/outdoors/<int:outdoor_id>/anuncios/<anuncio_id>/vinculado', methods=['PATCH'])
@@ -241,6 +259,9 @@ def desvincular_anuncio(outdoor_id, anuncio_id):
         return jsonify({'error': 'Vínculo não encontrado'}), 404
     outdoor['anuncios'].remove(anuncio_id)
     save_outdoors(outdoors)
+    # Notificar players sobre a atualização
+    socketio.start_background_task(notify_outdoor_update, outdoor_id)
+    return jsonify({'message': 'Anúncio desvinculado com sucesso'})
     return jsonify({'message': 'Anúncio desvinculado com sucesso!'})
 
 # ---- ANUNCIOS ----
@@ -342,5 +363,25 @@ def atualizar_ordem_anuncios(outdoor_id):
     save_outdoors(outdoors)
     return jsonify({'message': 'Ordem atualizada com sucesso!'})
 
+@socketio.on('connect')
+def handle_connect():
+    print('Cliente conectado')
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Cliente desconectado')
+
+# Função para notificar players sobre mudanças em um outdoor
+async def notify_outdoor_update(outdoor_id):
+    await socketio.emit('outdoor_updated', {'outdoor_id': outdoor_id})
+
+
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=3000, debug=True)
+    @app.route('/api/outdoor/<outdoor_id>/player/reload', methods=['POST'])
+    def reload_player(outdoor_id):
+        """Endpoint para recarregar um player específico"""
+        socketio.emit('reloadPlayer', {'outdoor_id': outdoor_id})
+        return jsonify({'message': f'Comando de recarregamento enviado para outdoor {outdoor_id}'}), 200
+
+    socketio.run(app, host='0.0.0.0', port=3000, debug=True)

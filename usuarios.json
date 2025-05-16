@@ -4,5 +4,11 @@
     "email": "osmaroliveira570@gmail.com",
     "senha": "@Osmar123",
     "tipo": "cliente"
+  },
+  {
+    "nome": "ipj",
+    "email": "admin@gmail.com",
+    "senha": "@Osmar123",
+    "tipo": "cliente"
   }
 ]

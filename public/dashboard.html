@@ -1116,30 +1116,51 @@ async function salvarEdicaoAnuncioVinculado(outdoorId, anuncioId) {
             }
         }
 
-        // Excluir outdoor
-        async function excluirOutdoor(id) {
-    // Certifique-se de que está recebendo id numérico
-    id = Number(id);
-            if (!confirm('Tem certeza que deseja excluir este outdoor?')) return;
-
-            try {
-                const response = await fetch(`/api/outdoors/${id}`, {
+        function excluirOutdoor(id) {
+            if (confirm('Tem certeza que deseja excluir este outdoor?')) {
+                fetch(`/api/outdoors/${id}`, {
                     method: 'DELETE',
                     headers: {
-                        'Authorization': `Bearer ${token}`
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
                     }
-                });
-
-                if (response.ok) {
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Erro ao excluir outdoor');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    alert('Outdoor excluído com sucesso!');
                     loadOutdoors();
-                } else {
-                    const data = await response.json();
-                    alert(data.error || 'Erro ao excluir outdoor');
-                }
-            } catch (error) {
-                console.error('Erro:', error);
-                alert('Erro ao excluir outdoor');
+                })
+                .catch(error => {
+                    console.error('Erro:', error);
+                    alert('Erro ao excluir outdoor');
+                });
             }
+        }
+
+        function recarregarPlayer(outdoorId) {
+            fetch(`/api/outdoor/${outdoorId}/player/reload`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Erro ao recarregar player');
+                }
+                return response.json();
+            })
+            .then(data => {
+                alert('Comando de recarregamento enviado para o player!');
+            })
+            .catch(error => {
+                console.error('Erro:', error);
+                alert('Erro ao enviar comando de recarregamento');
+            });
         }
 
         // Excluir anúncio
@@ -1150,7 +1171,7 @@ async function salvarEdicaoAnuncioVinculado(outdoorId, anuncioId) {
                 const response = await fetch(`/api/anuncios/${id}`, {
                     method: 'DELETE',
                     headers: {
-                        'Authorization': `Bearer ${token}`
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
                     }
                 });
 
@@ -1164,13 +1185,6 @@ async function salvarEdicaoAnuncioVinculado(outdoorId, anuncioId) {
                 console.error('Erro:', error);
                 alert('Erro ao excluir anúncio');
             }
-        }
-
-        // Logout
-        function logout() {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            window.location.href = '/index.html';
         }
 
         // Função utilitária para renderizar um outdoor na grid
@@ -1296,82 +1310,8 @@ if (anunciosResponse.status === 404) {
             alert('Nenhum anúncio vinculado a este outdoor');
             return;
         }
-        let currentIndex = 0;
-        let closeTimeout;
-        let modal = document.createElement('div');
-        modal.className = 'player-modal-netflix';
-        modal.innerHTML = `
-            <button class="player-modal-netflix-close" id="player-close-btn-netflix">&times;</button>
-            <div class="player-modal-netflix-content" id="player-modal-content-netflix"></div>
-        `;
-        document.body.appendChild(modal);
-        const content = modal.querySelector('#player-modal-content-netflix');
-
-        function showAnuncio(index) {
-            content.innerHTML = '';
-            if (closeTimeout) clearTimeout(closeTimeout);
-            const anuncio = anuncios[index];
-            if (!anuncio) {
-                // Loop infinito: volta ao início
-                showAnuncio(0);
-                return;
-            }
-            if(anuncio.tipo === 'imagem') {
-                const img = document.createElement('img');
-                img.src = '/uploads/' + anuncio.arquivo;
-                img.style.maxWidth = '100vw';
-                img.style.maxHeight = '100vh';
-                img.style.display = 'block';
-                content.appendChild(img);
-                closeTimeout = setTimeout(() => {
-                    showAnuncio(index + 1);
-                }, (parseInt(anuncio.duracao, 10) || 5) * 1000);
-            } else if(anuncio.tipo === 'video') {
-                const video = document.createElement('video');
-                video.src = '/uploads/' + anuncio.arquivo;
-                video.autoplay = true;
-                video.controls = true;
-                video.style.maxWidth = '100vw';
-                video.style.maxHeight = '100vh';
-                video.style.display = 'block';
-                content.appendChild(video);
-                closeTimeout = setTimeout(() => {
-                    video.pause();
-                    showAnuncio(index + 1);
-                }, (parseInt(anuncio.duracao, 10) || 5) * 1000);
-            }
-        }
-
-        // Fullscreen
-        if (modal.requestFullscreen) {
-            modal.requestFullscreen();
-        } else if (modal.webkitRequestFullscreen) {
-            modal.webkitRequestFullscreen();
-        } else if (modal.msRequestFullscreen) {
-            modal.msRequestFullscreen();
-        }
-
-        // Fechar
-        function closePlayer() {
-            if (closeTimeout) clearTimeout(closeTimeout);
-            document.body.removeChild(modal);
-            if (document.fullscreenElement) document.exitFullscreen();
-        }
-        const closeBtn = modal.querySelector('#player-close-btn-netflix');
-        closeBtn.onclick = closePlayer;
-
-        // Botão desaparece após 2s sem mouse
-        let hideTimeout;
-        function showCloseBtn() {
-            closeBtn.classList.remove('hide');
-            if (hideTimeout) clearTimeout(hideTimeout);
-            hideTimeout = setTimeout(() => closeBtn.classList.add('hide'), 2000);
-        }
-        modal.addEventListener('mousemove', showCloseBtn);
-        modal.addEventListener('mouseenter', showCloseBtn);
-        modal.addEventListener('mouseleave', () => closeBtn.classList.add('hide'));
-        showCloseBtn();
-        showAnuncio(0);
+        // Abrir a URL do player em uma nova aba
+        window.open(`/player.html?outdoor_id=${outdoorId}`, '_blank');
     })
     .catch(() => alert('Erro ao carregar anúncio para player.'));
 }
