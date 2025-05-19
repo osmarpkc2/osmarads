@@ -8,9 +8,25 @@
     <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
     <script>
         // Configurações para Smart TVs
-        const IS_SMART_TV = navigator.userAgent.includes('LG') || navigator.userAgent.includes('webOS');
+        const userAgent = navigator.userAgent.toLowerCase();
+        const IS_WEBOS = userAgent.includes('webos') || userAgent.includes('lg ');
+        const IS_TIZEN = userAgent.includes('samsung') || userAgent.includes('tizen');
+        const IS_ANDROID_TV = userAgent.includes('android') && (userAgent.includes('tv') || userAgent.includes('tcl'));
+        const IS_SMART_TV = IS_WEBOS || IS_TIZEN || IS_ANDROID_TV;
+        
+        // Configurações de URL baseado no ambiente
         const SERVER_URL = IS_SMART_TV ? 'https://osmarads.onrender.com' : 'http://localhost:3000';
         const FALLBACK_URL = 'http://localhost:3000';
+        
+        // Configurações específicas por plataforma
+        const TV_CONFIG = {
+            isWebOS: IS_WEBOS,
+            isTizen: IS_TIZEN,
+            isAndroidTV: IS_ANDROID_TV,
+            platform: IS_WEBOS ? 'webos' : IS_TIZEN ? 'tizen' : IS_ANDROID_TV ? 'androidtv' : 'web'
+        };
+        
+        console.log('Detectado dispositivo:', TV_CONFIG.platform);
         
         // Configuração do Socket.IO
         const socket = io(SERVER_URL, {
@@ -716,31 +732,199 @@
                 }
             }
 
+            // Mapeamento de teclas para diferentes modelos de Smart TV
+            const KEY_MAP = {
+                // Teclas padrão
+                'Enter': 'enter',
+                ' ': 'enter',
+                'i': 'info',
+                'I': 'info',
+                'ArrowLeft': 'left',
+                'ArrowRight': 'right',
+                'ArrowUp': 'up',
+                'ArrowDown': 'down',
+                'Backspace': 'back',
+                'Escape': 'back',
+                'MediaPlayPause': 'playPause',
+                'MediaStop': 'stop',
+                'MediaTrackNext': 'next',
+                'MediaTrackPrevious': 'previous',
+                // Teclas específicas para WebOS
+                'MediaRewind': 'rewind',
+                'MediaFastForward': 'fastForward',
+                // Teclas específicas para Tizen
+                'ColorF0Red': 'red',
+                'ColorF1Green': 'green',
+                'ColorF2Yellow': 'yellow',
+                'ColorF3Blue': 'blue'
+            };
+
             // Adicionar suporte a controles remotos
             function handleRemoteControl(e) {
-                switch(e.key) {
-                    case 'Enter':
-                    case ' ':
+                console.log('Tecla pressionada:', e.key, 'Código:', e.code);
+                
+                // Mapear a tecla pressionada para uma ação
+                const action = KEY_MAP[e.key] || e.key.toLowerCase();
+                let actionName = action;
+                
+                switch(action) {
+                    case 'enter':
+                    case 'select':
+                        actionName = 'enter';
                         toggleFullscreen();
                         break;
+                        
+                    case 'info':
                     case 'i':
-                    case 'I':
+                        actionName = 'info';
                         toggleContent();
                         break;
-                    case 'ArrowLeft':
+                        
+                    case 'left':
+                    case 'arrowleft':
+                        actionName = 'left';
                         if (currentAnuncio > 0) {
                             currentAnuncio--;
                             loadCurrentAnuncio();
+                            showFeedback('Anterior', '←');
                         }
                         break;
-                    case 'ArrowRight':
+                        
+                    case 'right':
+                    case 'arrowright':
+                        actionName = 'right';
                         if (currentAnuncio < anuncios.length - 1) {
                             currentAnuncio++;
                             loadCurrentAnuncio();
+                            showFeedback('Próximo', '→');
                         }
                         break;
+                        
+                    case 'playPause':
+                    case 'play':
+                    case 'pause':
+                        actionName = player.paused ? 'play' : 'pause';
+                        if (player.paused) {
+                            player.play().then(() => {
+                                showFeedback('Reproduzindo', '▶️');
+                            }).catch(e => {
+                                console.error('Erro ao reproduzir:', e);
+                                showFeedback('Erro ao reproduzir', '❌');
+                            });
+                        } else {
+                            player.pause();
+                            showFeedback('Pausado', '⏸️');
+                        }
+                        break;
+                        
+                    case 'stop':
+                        actionName = 'stop';
+                        player.pause();
+                        player.currentTime = 0;
+                        showFeedback('Parado', '⏹️');
+                        break;
+                        
+                    case 'back':
+                    case 'return':
+                        actionName = 'back';
+                        console.log('Voltar pressionado');
+                        showFeedback('Voltar', '↩️');
+                        // Adicione aqui a lógica para voltar à tela anterior
+                        break;
+                        
+                    case 'red':
+                    case 'green':
+                    case 'yellow':
+                    case 'blue':
+                        actionName = action;
+                        console.log(`Botão ${action.toUpperCase()} pressionado`);
+                        showFeedback(`Botão ${action}`, `🟥🟩🟨🟦`['redgreenyellowblue'.indexOf(action) / 4]);
+                        // Adicione ações personalizadas para os botões coloridos aqui
+                        break;
+                        
+                    default:
+                        // Mostrar feedback para outras teclas não mapeadas
+                        showFeedback('Tecla: ' + e.key, e.key);
                 }
+                
+                // Impedir comportamento padrão para teclas de controle de mídia
+                if (['MediaPlayPause', 'MediaStop', 'MediaTrackNext', 'MediaTrackPrevious', 
+                     'MediaRewind', 'MediaFastForward'].includes(e.key)) {
+                    e.preventDefault();
+                }
+                
+                // Log da ação para depuração
+                console.log(`Ação executada: ${actionName} (${e.key})`);
             }
+
+            // Adicionar feedback visual para controles remotos
+            const feedback = document.createElement('div');
+            feedback.id = 'remote-feedback';
+            feedback.style.position = 'fixed';
+            feedback.style.top = '20px';
+            feedback.style.left = '50%';
+            feedback.style.transform = 'translateX(-50%)';
+            feedback.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+            feedback.style.color = '#fff';
+            feedback.style.padding = '15px 30px';
+            feedback.style.borderRadius = '8px';
+            feedback.style.fontSize = '18px';
+            feedback.style.fontWeight = 'bold';
+            feedback.style.zIndex = '10000';
+            feedback.style.display = 'none';
+            feedback.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
+            feedback.style.transition = 'opacity 0.3s';
+            document.body.appendChild(feedback);
+
+            // Estilo para o ícone de botão
+            const buttonStyle = 'display: inline-block; background: #555; color: #fff; border-radius: 4px; padding: 2px 8px; margin: 0 2px; font-family: monospace;';
+
+            function showFeedback(action, key) {
+                let text = '';
+                let icon = '';
+                
+                // Mapear ações para textos amigáveis
+                const actionMap = {
+                    'enter': 'Selecionar',
+                    'info': 'Informações',
+                    'left': 'Anterior',
+                    'right': 'Próximo',
+                    'playPause': 'Play/Pausa',
+                    'stop': 'Parar',
+                    'back': 'Voltar',
+                    'red': 'Vermelho',
+                    'green': 'Verde',
+                    'yellow': 'Amarelo',
+                    'blue': 'Azul'
+                };
+                
+                // Texto amigável para a ação
+                const actionText = actionMap[action] || action;
+                
+                // Criar ícone baseado na tecla
+                if (key) {
+                    icon = `<span style="${buttonStyle}">${key}</span>`;
+                }
+                
+                // Montar o texto de feedback
+                text = `${actionText} ${icon}`;
+                
+                // Atualizar e exibir o feedback
+                feedback.innerHTML = text;
+                feedback.style.display = 'block';
+                feedback.style.opacity = '1';
+                
+                // Configurar para esmaecer após 1.5 segundos
+                clearTimeout(feedback.timer);
+                feedback.timer = setTimeout(() => {
+                    feedback.style.opacity = '0';
+                    // Remover completamente após a transição
+                    setTimeout(() => {
+                        feedback.style.display = 'none';
+                    }, 300);
+                }, 1500);
+            }
+
 
             // Configurar eventos de teclado
             document.addEventListener('keydown', handleRemoteControl);
