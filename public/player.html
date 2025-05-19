@@ -15,8 +15,8 @@
         const IS_SMART_TV = IS_WEBOS || IS_TIZEN || IS_ANDROID_TV;
         
         // Configurações de URL baseado no ambiente
-        const SERVER_URL = IS_SMART_TV ? 'https://osmarads.onrender.com' : 'http://localhost:3000';
-        const FALLBACK_URL = 'http://localhost:3000';
+        const SERVER_URL = 'https://osmarads.onrender.com';
+        const FALLBACK_URL = 'https://osmarads.onrender.com'; // Mesmo servidor como fallback
         
         // Configurações específicas por plataforma
         const TV_CONFIG = {
@@ -262,39 +262,10 @@
             let currentDate = null;
             let currentTime = null;
 
-            // Função para configurar o socket
-            function setupSocket() {
-                try {
-                    if (socket) {
-                        socket.disconnect();
-                    }
-                    
-                    socket = io(SERVER_URL, {
-                        transports: ['websocket', 'polling'],
-                        reconnection: true,
-                        reconnectionDelay: 1000,
-                        reconnectionDelayMax: 5000,
-                        timeout: 10000
-                    });
-                } catch (error) {
-                    console.error('Erro ao conectar com o servidor principal:', error);
-                    try {
-                        // Tentar conectar com o servidor de fallback
-                        socket = io(FALLBACK_URL, {
-                            reconnection: true,
-                            reconnectionDelay: 1000,
-                            reconnectionDelayMax: 5000,
-                            reconnectionAttempts: 5
-                        });
-                    } catch (fallbackError) {
-                        console.error('Erro ao conectar com o servidor de fallback:', fallbackError);
-                        if (status) {
-                            status.textContent = 'Erro ao conectar com o servidor';
-                        }
-                        return;
-                    }
-                }
-
+            // Função para configurar os manipuladores de eventos do socket
+            function setupSocketHandlers(socket) {
+                if (!socket) return;
+                
                 // Evento para recarregar o player
                 socket.on('reloadPlayer', (data) => {
                     if (data.outdoor_id === currentOutdoorId) {
@@ -318,6 +289,91 @@
                         status.textContent = 'Reconectado ao servidor';
                     }
                 });
+                
+                // Evento de atualização de outdoor
+                socket.on('outdoor_updated', (data) => {
+                    console.log('Outdoor atualizado, recarregando anúncios...', data);
+                    if (data.outdoor_id == currentOutdoorId) {
+                        loadAnuncios();
+                    }
+                });
+
+                // Evento de atualização de anúncio
+                socket.on('anuncio_updated', (data) => {
+                    console.log('Anúncio atualizado, recarregando lista...', data);
+                    if (data.outdoor_id == currentOutdoorId) {
+                        loadAnuncios();
+                    }
+                });
+                
+                // Entrar na sala do outdoor atual
+                if (currentOutdoorId) {
+                    socket.emit('join_outdoor', { outdoor_id: currentOutdoorId });
+                }
+            }
+
+            // Função para configurar o socket
+            function setupSocket() {
+                try {
+                    // Se já existe uma conexão, desconectar
+                    if (window.socketInstance) {
+                        window.socketInstance.disconnect();
+                    }
+                    
+                    console.log('Conectando ao servidor principal:', SERVER_URL);
+                    
+                    // Criar nova instância do socket
+                    window.socketInstance = io(SERVER_URL, {
+                        path: '/socket.io',
+                        transports: ['websocket', 'polling'],
+                        reconnection: true,
+                        reconnectionDelay: 1000,
+                        reconnectionDelayMax: 5000,
+                        reconnectionAttempts: 5,
+                        timeout: 20000,
+                        secure: true,
+                        rejectUnauthorized: false,
+                        withCredentials: true
+                    });
+                    
+                    console.log('Socket configurado para:', SERVER_URL);
+                    
+                    // Configurar manipuladores de eventos
+                    setupSocketHandlers(window.socketInstance);
+                    
+                } catch (error) {
+                    console.error('Erro ao conectar com o servidor principal:', error);
+                    if (status) {
+                        status.textContent = 'Tentando conexão alternativa...';
+                    }
+                    
+                    // Só tenta o fallback se for diferente do servidor principal
+                    if (FALLBACK_URL !== SERVER_URL) {
+                        try {
+                            console.log('Tentando conectar ao servidor de fallback:', FALLBACK_URL);
+                            
+                            // Tentar conectar com o servidor de fallback
+                            window.socketInstance = io(FALLBACK_URL, {
+                                transports: ['websocket', 'polling'],
+                                reconnection: true,
+                                reconnectionDelay: 1000,
+                                reconnectionDelayMax: 5000,
+                                reconnectionAttempts: 5,
+                                secure: true,
+                                rejectUnauthorized: false
+                            });
+                            
+                            // Configurar manipuladores de eventos
+                            setupSocketHandlers(window.socketInstance);
+                            
+                        } catch (fallbackError) {
+                            console.error('Erro ao conectar com o servidor de fallback:', fallbackError);
+                            if (status) {
+                                status.textContent = 'Erro ao conectar com o servidor';
+                            }
+                        }
+                    }
+                }
             }
 
             // Função para inicializar elementos do DOM

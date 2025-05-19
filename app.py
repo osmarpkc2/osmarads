@@ -23,8 +23,19 @@ CORS(app, resources={
     }
 })
 
-# Configurar Socket.IO com suporte a Smart TVs
-socketio = SocketIO(app, cors_allowed_origins="*", ping_timeout=60, ping_interval=25)
+# Configurar Socket.IO com suporte a Smart TVs e configurações de produção
+socketio = SocketIO(
+    app,
+    cors_allowed_origins=["https://osmarads.onrender.com", "http://localhost:3000"],
+    ping_timeout=60,
+    ping_interval=25,
+    async_mode='eventlet',
+    logger=True,
+    engineio_logger=True,
+    cors_credentials=True,
+    allow_upgrades=True,
+    http_compression=True
+)
 
 # Função para verificar IP
 def is_allowed_ip(ip):
