@@ -494,27 +494,43 @@ def patch_anuncio(id):
         # Decodificar o token para obter o email do usuário
         decoded = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
         user_email = decoded['email']
-    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError) as e:
-        return jsonify({'error': 'Token inválido ou expirado'}), 401
-    
-    data = request.json
-    anuncios = read_anuncios()
-    anuncio = next((a for a in anuncios if a['_id'] == id), None)
-    
-    if not anuncio:
-        return jsonify({'error': 'Anúncio não encontrado'}), 404
-    
-    # Verificar se o usuário é o dono do anúncio
-    if anuncio.get('usuario') != user_email:
-        return jsonify({'error': 'Você não tem permissão para editar este anúncio'}), 403
-    
-    # Atualiza apenas campos permitidos
-    for campo in ['titulo', 'tipo', 'duracao']:
-        if campo in data:
-            anuncio[campo] = data[campo]
-    
-    save_anuncios(anuncios)
-    return jsonify({'message': 'Anúncio atualizado com sucesso!', 'anuncio': anuncio})
+        
+        anuncios = read_anuncios()
+        anuncio_index = next((i for i, a in enumerate(anuncios) if a['_id'] == id), None)
+        
+        if anuncio_index is None:
+            return jsonify({'error': 'Anúncio não encontrado'}), 404
+            
+        # Verificar se o usuário é o dono do anúncio
+        if anuncios[anuncio_index].get('usuario') != user_email:
+            return jsonify({'error': 'Você não tem permissão para editar este anúncio'}), 403
+            
+        # Obter outdoor_id antes de atualizar
+        outdoor_id = anuncios[anuncio_index].get('outdoor_id')
+        
+        # Atualizar apenas os campos fornecidos
+        data = request.get_json()
+        for key, value in data.items():
+            if key != '_id' and key != 'id':  # Não permitir alterar o ID
+                anuncios[anuncio_index][key] = value
+        
+        # Atualizar data de modificação
+        anuncios[anuncio_index]['ultima_atualizacao'] = datetime.now().isoformat()
+                
+        save_anuncios(anuncios)
+        
+        # Notificar atualização do anúncio
+        if outdoor_id:
+            notify_anuncio_update(outdoor_id, id)
+        
+        return jsonify(anuncios[anuncio_index])
+        
+    except jwt.ExpiredSignatureError:
+        return jsonify({'error': 'Token expirado'}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({'error': 'Token inválido'}), 401
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/anuncios/<id>', methods=['DELETE'])
 def delete_anuncio(id):
@@ -581,9 +597,25 @@ def handle_connect():
 def handle_disconnect():
     print('Cliente desconectado')
 
+@socketio.on('join_outdoor')
+def handle_join_outdoor(data):
+    """Adiciona o cliente à sala do outdoor para receber atualizações"""
+    outdoor_id = data.get('outdoor_id')
+    if outdoor_id:
+        from flask_socketio import join_room
+        join_room(outdoor_id)
+        print(f'Cliente entrou na sala do outdoor {outdoor_id}')
+
 # Função para notificar players sobre mudanças em um outdoor
-async def notify_outdoor_update(outdoor_id):
-    await socketio.emit('outdoor_updated', {'outdoor_id': outdoor_id})
+def notify_outdoor_update(outdoor_id):
+    socketio.emit('outdoor_updated', {'outdoor_id': outdoor_id}, room=outdoor_id)
+
+# Função para notificar players sobre atualização de um anúncio
+def notify_anuncio_update(outdoor_id, anuncio_id):
+    socketio.emit('anuncio_updated', {
+        'outdoor_id': outdoor_id,
+        'anuncio_id': anuncio_id
+    }, room=outdoor_id)
 
 
 

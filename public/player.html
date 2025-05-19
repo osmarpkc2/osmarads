@@ -549,15 +549,20 @@
             }
 
             // Função para carregar e reproduzir o anúncio atual com cache
-            async function loadCurrentAnuncio() {
+            async function loadCurrentAnuncio(forceReload = false) {
                 if (!player || currentAnuncio >= anuncios.length) return;
 
                 try {
                     const anuncio = anuncios[currentAnuncio];
                     console.log('Carregando anúncio:', anuncio.titulo);
 
-                    // Carregar o vídeo diretamente do servidor
-                    const videoSrc = `/uploads/${anuncio.arquivo}`;
+                    // Carregar o vídeo diretamente do servidor, forçando recarregamento se necessário
+                    let videoSrc = `/uploads/${anuncio.arquivo}`;
+                    if (forceReload) {
+                        // Adiciona um timestamp para evitar cache
+                        videoSrc += `?t=${new Date().getTime()}`;
+                        console.log('Forçando recarregamento do anúncio');
+                    }
                     console.log('URL do vídeo:', videoSrc);
                     
                     // Criar source element
@@ -671,10 +676,19 @@
                 }
             }
 
+            
             // Função principal para iniciar o player com suporte a Smart TVs
             async function startPlayer(outdoorId) {
                 try {
                     console.log('Carregando anúncios para outdoor:', outdoorId);
+                    
+                    // Atualizar o ID do outdoor atual
+                    currentOutdoorId = outdoorId;
+                    
+                    // Entrar na sala do WebSocket para este outdoor
+                    if (socket) {
+                        socket.emit('join_outdoor', { outdoor_id: outdoorId });
+                    }
                     
                     // Configurar headers para Smart TVs
                     const headers = {
@@ -926,8 +940,64 @@
             }
 
 
+            // Função para carregar a lista de anúncios do servidor
+            async function loadAnuncios() {
+                try {
+                    console.log('Carregando lista de anúncios...');
+                    const response = await fetch(`${SERVER_URL}/api/outdoors/${currentOutdoorId}/anuncios`);
+                    if (!response.ok) {
+                        throw new Error('Erro ao carregar anúncios');
+                    }
+                    const data = await response.json();
+                    anuncios = data.anuncios || [];
+                    console.log(`${anuncios.length} anúncios carregados`);
+                    
+                    // Se não houver anúncios, mostrar mensagem
+                    if (anuncios.length === 0) {
+                        showFeedback('info', 'Nenhum anúncio disponível');
+                        return;
+                    }
+                    
+                    // Reiniciar o player com os novos anúncios
+                    currentAnuncio = 0;
+                    loadCurrentAnuncio();
+                    
+                } catch (error) {
+                    console.error('Erro ao carregar anúncios:', error);
+                    showFeedback('error', 'Erro ao carregar anúncios');
+                    // Tentar novamente após 30 segundos
+                    setTimeout(loadAnuncios, 30000);
+                }
+            }
+
             // Configurar eventos de teclado
             document.addEventListener('keydown', handleRemoteControl);
+
+            // Configurar eventos de atualização em tempo real
+            socket.on('anuncio_updated', (data) => {
+                console.log('Anúncio atualizado:', data);
+                // Se o anúncio atual foi atualizado, recarregá-lo
+                if (anuncios && anuncios[currentAnuncio] && anuncios[currentAnuncio]._id === data.anuncio_id) {
+                    console.log('Anúncio atual foi atualizado, recarregando...');
+                    loadCurrentAnuncio(true); // Forçar recarregamento
+                }
+            });
+
+            socket.on('outdoor_updated', (data) => {
+                console.log('Outdoor atualizado, recarregando anúncios...');
+                // Recarregar lista de anúncios
+                if (currentOutdoorId === data.outdoor_id) {
+                    loadAnuncios();
+                }
+            });
+
+            // Configurar evento para entrar na sala do outdoor quando o socket estiver conectado
+            socket.on('connect', () => {
+                if (currentOutdoorId) {
+                    console.log('Conectado ao WebSocket, entrando na sala do outdoor:', currentOutdoorId);
+                    socket.emit('join_outdoor', { outdoor_id: currentOutdoorId });
+                }
+            });
 
             // Adicionar feedback visual
             if (status) {
