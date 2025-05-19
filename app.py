@@ -318,12 +318,17 @@ def get_anuncios_vinculados(outdoor_id):
         for aid in outdoor['anuncios']:
             anuncio = next((a for a in anuncios if a['_id'] == aid), None)
             if anuncio:
-                vinculados_ordenados.append(anuncio)
+                # Se houver sobrescrita local, aplicar as alterações
+                if 'anuncios_vinculados' in outdoor and aid in outdoor['anuncios_vinculados']:
+                    anuncio_atualizado = anuncio.copy()
+                    anuncio_atualizado.update(outdoor['anuncios_vinculados'][aid])
+                    vinculados_ordenados.append(anuncio_atualizado)
+                else:
+                    vinculados_ordenados.append(anuncio)
         
         return jsonify(vinculados_ordenados)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-    return jsonify(vinculados_ordenados)
 
 @app.route('/api/outdoors/<int:outdoor_id>/anuncios/<anuncio_id>/vinculado', methods=['PATCH'])
 def patch_anuncio_vinculado(outdoor_id, anuncio_id):
@@ -370,16 +375,27 @@ def patch_anuncio_vinculado(outdoor_id, anuncio_id):
 # Desvincular anúncio de outdoor
 @app.route('/api/outdoors/<int:outdoor_id>/anuncios/<anuncio_id>', methods=['DELETE'])
 def desvincular_anuncio(outdoor_id, anuncio_id):
-    outdoors = read_outdoors()
-    outdoor = next((o for o in outdoors if o['id'] == outdoor_id), None)
-    if not outdoor or 'anuncios' not in outdoor or anuncio_id not in outdoor['anuncios']:
-        return jsonify({'error': 'Vínculo não encontrado'}), 404
-    outdoor['anuncios'].remove(anuncio_id)
-    save_outdoors(outdoors)
-    # Notificar players sobre a atualização
-    socketio.start_background_task(notify_outdoor_update, outdoor_id)
-    return jsonify({'message': 'Anúncio desvinculado com sucesso'})
-    return jsonify({'message': 'Anúncio desvinculado com sucesso!'})
+    try:
+        outdoors = read_outdoors()
+        outdoor = next((o for o in outdoors if o['id'] == outdoor_id), None)
+        if not outdoor or 'anuncios' not in outdoor or anuncio_id not in outdoor['anuncios']:
+            return jsonify({'error': 'Vínculo não encontrado'}), 404
+        
+        # Remover o anúncio da lista
+        outdoor['anuncios'].remove(anuncio_id)
+        
+        # Se houver anúncios vinculados, remover também
+        if 'anuncios_vinculados' in outdoor and anuncio_id in outdoor['anuncios_vinculados']:
+            del outdoor['anuncios_vinculados'][anuncio_id]
+        
+        save_outdoors(outdoors)
+        
+        # Notificar players sobre a atualização
+        socketio.start_background_task(notify_outdoor_update, outdoor_id)
+        
+        return jsonify({'message': 'Anúncio desvinculado com sucesso'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # ---- ANUNCIOS ----
 import uuid
@@ -572,22 +588,68 @@ def delete_anuncio(id):
     save_anuncios(anuncios)
     return jsonify({'message': 'Anúncio excluído com sucesso!'})
 
-@app.route('/api/outdoors/<int:outdoor_id>/anuncios/ordem', methods=['PUT'])
+@app.route('/api/outdoors/<int:outdoor_id>/anuncios/ordem', methods=['PATCH'])
 def atualizar_ordem_anuncios(outdoor_id):
-    data = request.json
-    nova_ordem = data.get('ordem')
-    if not isinstance(nova_ordem, list):
-        return jsonify({'error': 'Ordem inválida'}), 400
-    outdoors = read_outdoors()
-    outdoor = next((o for o in outdoors if o['id'] == outdoor_id), None)
-    if not outdoor:
-        return jsonify({'error': 'Outdoor não encontrado'}), 404
-    if 'anuncios' not in outdoor:
-        outdoor['anuncios'] = []
-    # Mantém apenas anúncios já vinculados
-    outdoor['anuncios'] = [aid for aid in nova_ordem if aid in outdoor['anuncios']]
-    save_outdoors(outdoors)
-    return jsonify({'message': 'Ordem atualizada com sucesso!'})
+    try:
+        data = request.json
+        if 'anuncios' not in data or not isinstance(data['anuncios'], list):
+            return jsonify({'error': 'Lista de anúncios inválida'}), 400
+        
+        outdoors = read_outdoors()
+        outdoor = next((o for o in outdoors if o['id'] == outdoor_id), None)
+        if not outdoor:
+            return jsonify({'error': 'Outdoor não encontrado'}), 404
+        
+        # Verificar se todos os IDs fornecidos existem no outdoor
+        anuncios_validos = all(anuncio_id in (outdoor.get('anuncios') or []) for anuncio_id in data['anuncios'])
+        if not anuncios_validos:
+            return jsonify({'error': 'Um ou mais IDs de anúncio não pertencem a este outdoor'}), 400
+        
+        # Atualizar a ordem dos anúncios
+        outdoor['anuncios'] = data['anuncios']
+        save_outdoors(outdoors)
+        
+        # Notificar os players sobre a mudança
+        socketio.start_background_task(notify_outdoor_update, outdoor_id)
+        
+        return jsonify({
+            'message': 'Ordem dos anúncios atualizada com sucesso',
+            'anuncios': data['anuncios']
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/outdoors/<int:outdoor_id>/anuncios/ordem', methods=['PUT'])
+def atualizar_ordem_anuncios_put(outdoor_id):
+    try:
+        data = request.json
+        nova_ordem = data.get('ordem')
+        if not isinstance(nova_ordem, list):
+            return jsonify({'error': 'Ordem inválida'}), 400
+            
+        outdoors = read_outdoors()
+        outdoor = next((o for o in outdoors if o['id'] == outdoor_id), None)
+        if not outdoor:
+            return jsonify({'error': 'Outdoor não encontrado'}), 404
+            
+        # Verificar se todos os IDs fornecidos existem no outdoor
+        anuncios_validos = all(anuncio_id in (outdoor.get('anuncios') or []) for anuncio_id in nova_ordem)
+        if not anuncios_validos:
+            return jsonify({'error': 'Um ou mais IDs de anúncio não pertencem a este outdoor'}), 400
+            
+        # Atualizar a ordem dos anúncios
+        outdoor['anuncios'] = nova_ordem
+        save_outdoors(outdoors)
+        
+        # Notificar os players sobre a mudança
+        socketio.start_background_task(notify_outdoor_update, outdoor_id)
+        
+        return jsonify({
+            'message': 'Ordem dos anúncios atualizada com sucesso',
+            'anuncios': nova_ordem
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @socketio.on('connect')
 def handle_connect():
@@ -608,14 +670,18 @@ def handle_join_outdoor(data):
 
 # Função para notificar players sobre mudanças em um outdoor
 def notify_outdoor_update(outdoor_id):
-    socketio.emit('outdoor_updated', {'outdoor_id': outdoor_id}, room=outdoor_id)
+    """Notifica todos os players conectados ao outdoor sobre uma atualização"""
+    print(f"Notificando atualização do outdoor {outdoor_id}")
+    socketio.emit('outdoor_updated', {'outdoor_id': str(outdoor_id)}, room=str(outdoor_id))
 
 # Função para notificar players sobre atualização de um anúncio
 def notify_anuncio_update(outdoor_id, anuncio_id):
+    """Notifica sobre a atualização de um anúncio específico"""
+    print(f"Notificando atualização do anúncio {anuncio_id} no outdoor {outdoor_id}")
     socketio.emit('anuncio_updated', {
-        'outdoor_id': outdoor_id,
-        'anuncio_id': anuncio_id
-    }, room=outdoor_id)
+        'outdoor_id': str(outdoor_id),
+        'anuncio_id': str(anuncio_id)
+    }, room=str(outdoor_id))
 
 
 

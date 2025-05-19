@@ -941,37 +941,81 @@
 
 
             // Função para carregar a lista de anúncios do servidor
-            async function loadAnuncios() {
+            async function loadAnuncios(forceReload = false) {
                 try {
                     console.log('Carregando lista de anúncios...');
-                    const response = await fetch(`${SERVER_URL}/api/outdoors/${currentOutdoorId}/anuncios`);
+                    const url = new URL(`${SERVER_URL}/api/outdoors/${currentOutdoorId}/anuncios`);
+                    if (forceReload) {
+                        url.searchParams.append('t', new Date().getTime());
+                    }
+
+                    const response = await fetch(url, {
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                            'Cache-Control': 'no-cache'
+                        }
+                    });
+
                     if (!response.ok) {
                         throw new Error('Erro ao carregar anúncios');
                     }
+                    
                     const data = await response.json();
-                    anuncios = data.anuncios || [];
+                    anuncios = Array.isArray(data) ? data : [];
                     console.log(`${anuncios.length} anúncios carregados`);
                     
                     // Se não houver anúncios, mostrar mensagem
                     if (anuncios.length === 0) {
                         showFeedback('info', 'Nenhum anúncio disponível');
+                        if (player) {
+                            player.pause();
+                        }
                         return;
                     }
                     
-                    // Reiniciar o player com os novos anúncios
-                    currentAnuncio = 0;
-                    loadCurrentAnuncio();
+                    // Se for um recarregamento forçado, manter o anúncio atual se possível
+                    if (!forceReload && currentAnuncio < anuncios.length) {
+                        console.log('Mantendo anúncio atual:', currentAnuncio);
+                        loadCurrentAnuncio(true);
+                    } else {
+                        // Reiniciar o player com os novos anúncios
+                        currentAnuncio = 0;
+                        loadCurrentAnuncio(true);
+                    }
                     
                 } catch (error) {
                     console.error('Erro ao carregar anúncios:', error);
                     showFeedback('error', 'Erro ao carregar anúncios');
                     // Tentar novamente após 30 segundos
-                    setTimeout(loadAnuncios, 30000);
+                    setTimeout(() => loadAnuncios(), 30000);
                 }
             }
 
             // Configurar eventos de teclado
             document.addEventListener('keydown', handleRemoteControl);
+
+            // Configurar eventos de atualização em tempo real
+            socket.on('outdoor_updated', (data) => {
+                console.log('Outdoor atualizado, recarregando anúncios...', data);
+                if (data.outdoor_id === currentOutdoorId) {
+                    loadAnuncios();
+                }
+            });
+
+            socket.on('anuncio_updated', (data) => {
+                console.log('Anúncio atualizado, recarregando lista...', data);
+                if (data.outdoor_id === currentOutdoorId) {
+                    loadAnuncios();
+                }
+            });
+
+            // Configurar evento para recarregar o player
+            socket.on('reloadPlayer', (data) => {
+                if (data.outdoor_id === currentOutdoorId) {
+                    console.log('Recebido comando para recarregar player');
+                    loadAnuncios();
+                }
+            });
 
             // Configurar eventos de atualização em tempo real
             socket.on('anuncio_updated', (data) => {
