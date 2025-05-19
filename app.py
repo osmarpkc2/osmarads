@@ -2,15 +2,47 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit
 import json
 import os
+import socket
+from flask_cors import CORS
+import jwt
+from datetime import datetime, timedelta
 
-# Configurar diretório de uploads
-UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+# Configurações para Smart TVs
+ALLOWED_IPS = ['127.0.0.1', 'localhost']  # IPs permitidos
+SMART_TV_IPS = []  # Lista para armazenar IPs de Smart TVs
 
 app = Flask(__name__, static_folder='public')
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-socketio = SocketIO(app, cors_allowed_origins="*")
+app.config['SECRET_KEY'] = os.urandom(24)  # Chave secreta para segurança
+
+# Configurar CORS para permitir conexões locais e Smart TVs
+CORS(app, resources={
+    r"/*": {
+        "origins": ["https://osmarads.onrender.com", "http://localhost:3000"],
+        "methods": ["GET", "POST", "PUT", "DELETE"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
+
+# Configurar Socket.IO com suporte a Smart TVs
+socketio = SocketIO(app, cors_allowed_origins="*", ping_timeout=60, ping_interval=25)
+
+# Função para verificar IP
+def is_allowed_ip(ip):
+    return ip in ALLOWED_IPS or ip in SMART_TV_IPS
+
+# Função para verificar se é uma Smart TV
+def is_smart_tv(request):
+    user_agent = request.headers.get('User-Agent', '')
+    return 'LG' in user_agent or 'webOS' in user_agent
+
+# Função para registrar Smart TV
+@app.route('/api/smart-tv/register', methods=['POST'])
+def register_smart_tv():
+    ip = request.remote_addr
+    if is_smart_tv(request):
+        SMART_TV_IPS.append(ip)
+        return jsonify({'message': 'Smart TV registrada com sucesso'}), 200
+    return jsonify({'error': 'Dispositivo não é uma Smart TV'}), 400
 USERS_FILE = os.path.join(os.path.dirname(__file__), 'usuarios.json')
 
 # Utilitários para ler/salvar usuários
@@ -43,32 +75,104 @@ def register():
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
-    data = request.json
-    print('DEBUG - Dados recebidos no login:', data)
-    users = read_users()
-    print('DEBUG - Usuários carregados:', users)
-    senha = data.get('password') or data.get('senha')
-    print('DEBUG - Senha recebida:', senha)
-    user = next((u for u in users if u['email'] == data['email']), None)
-    print('DEBUG - Usuário encontrado:', user)
-    if not user or user['senha'] != senha:
-        print('DEBUG - Credenciais inválidas')
-        return jsonify({'error': 'Credenciais inválidas'}), 401
-    print('DEBUG - Login bem-sucedido!')
-    return jsonify({'user': {
-        'nome': user['nome'],
-        'email': user['email'],
-        'tipo': user['tipo']
-    }}), 200
+    try:
+        data = request.json
+        
+        # Validação de dados
+        if not data or 'email' not in data or ('password' not in data and 'senha' not in data):
+            return jsonify({
+                'error': 'Dados de login inválidos',
+                'details': 'Email e senha são obrigatórios'
+            }), 400
+            
+        # Obter senha
+        senha = data.get('password') or data.get('senha')
+        if not senha:
+            return jsonify({
+                'error': 'Senha inválida',
+                'details': 'Senha não fornecida'
+            }), 400
+            
+        # Carregar usuários
+        users = read_users()
+        if not users:
+            return jsonify({
+                'error': 'Erro de sistema',
+                'details': 'Nenhum usuário cadastrado'
+            }), 500
+            
+        # Verificar credenciais
+        user = next((u for u in users if u['email'] == data['email']), None)
+        if not user or user['senha'] != senha:
+            return jsonify({
+                'error': 'Credenciais inválidas',
+                'details': 'Email ou senha incorretos'
+            }), 401
+        
+        # Gerar token JWT
+        try:
+            token = jwt.encode(
+                {
+                    'email': user['email'],
+                    'exp': datetime.utcnow() + timedelta(hours=1)
+                },
+                app.config['SECRET_KEY']
+            )
+        except Exception as e:
+            print(f'Erro ao gerar token: {str(e)}')
+            return jsonify({
+                'error': 'Erro de autenticação',
+                'details': 'Falha ao gerar token de acesso'
+            }), 500
+            
+        # Resposta
+        response = {
+            'message': 'Login realizado com sucesso',
+            'user': {
+                'email': user['email'],
+                'nome': user['nome'],
+                'tipo': user['tipo']
+            },
+            'token': token
+        }
+        
+        # Para Smart TVs, retornar token no localStorage
+        if is_smart_tv(request):
+            response['localStorage'] = True
+        
+        return jsonify(response), 200
+        
+    except Exception as e:
+        print(f'Erro no login: {str(e)}')
+        return jsonify({
+            'error': 'Erro interno do servidor',
+            'details': str(e)
+        }), 500
 
 @app.route('/')
 def index():
     return send_from_directory(app.static_folder, 'index.html')
 
+# Configurar diretório de uploads
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
 # Rota para servir arquivos de upload
-@app.route('/api/uploads/<filename>')
+@app.route('/uploads/<filename>')
 def serve_upload(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    try:
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
+        if not os.path.exists(file_path):
+            return jsonify({'error': f'Arquivo não encontrado: {filename}'}), 404
+            
+        return send_from_directory(UPLOAD_FOLDER, filename)
+    except Exception as e:
+        print(f'Erro ao servir arquivo {filename}: {str(e)}')
+        return jsonify({
+            'error': 'Erro ao acessar arquivo',
+            'details': str(e)
+        }), 500
 
 # Rota para servir qualquer arquivo da pasta public
 @app.route('/<path:filename>')
@@ -168,20 +272,33 @@ def list_outdoors_meus():
 # Vincular anúncio a outdoor
 @app.route('/api/outdoors/<int:outdoor_id>/anuncios/<anuncio_id>', methods=['POST'])
 def vincular_anuncio(outdoor_id, anuncio_id):
-    outdoors = read_outdoors()
-    anuncios = read_anuncios()
-    outdoor = next((o for o in outdoors if o['id'] == outdoor_id), None)
-    anuncio = next((a for a in anuncios if a['_id'] == anuncio_id), None)
-    if not outdoor or not anuncio:
-        return jsonify({'error': 'Outdoor ou anúncio não encontrado'}), 404
-    if 'anuncios' not in outdoor:
-        outdoor['anuncios'] = []
-    if anuncio_id not in outdoor['anuncios']:
-        outdoor['anuncios'].append(anuncio_id)
-        save_outdoors(outdoors)
-        # Notificar players sobre a atualização
-        socketio.start_background_task(notify_outdoor_update, outdoor_id)
-    return jsonify({'message': 'Anúncio vinculado com sucesso!'})
+    try:
+        outdoors = read_outdoors()
+        anuncios = read_anuncios()
+        outdoor = next((o for o in outdoors if o['id'] == outdoor_id), None)
+        anuncio = next((a for a in anuncios if a['_id'] == anuncio_id), None)
+        
+        if not outdoor or not anuncio:
+            return jsonify({'error': 'Outdoor ou anúncio não encontrado'}), 404
+            
+        # Verificar se o outdoor pertence ao mesmo usuário do anúncio
+        if outdoor.get('usuario') != anuncio.get('usuario'):
+            return jsonify({'error': 'O anúncio não pertence ao mesmo usuário do outdoor'}), 403
+            
+        if 'anuncios' not in outdoor:
+            outdoor['anuncios'] = []
+            
+        if anuncio_id not in outdoor['anuncios']:
+            outdoor['anuncios'].append(anuncio_id)
+            save_outdoors(outdoors)
+            # Notificar players sobre a atualização
+            socketio.start_background_task(notify_outdoor_update, outdoor_id)
+            
+        return jsonify({'message': 'Anúncio vinculado com sucesso!'}), 200
+        
+    except Exception as e:
+        print('Erro ao vincular anúncio:', str(e))
+        return jsonify({'error': 'Erro ao vincular anúncio'}), 500
 
 # Listar anúncios vinculados a um outdoor
 @app.route('/api/outdoors/<int:outdoor_id>/anuncios', methods=['GET'])
@@ -270,69 +387,161 @@ from werkzeug.utils import secure_filename
 ANUNCIOS_FILE = os.path.join(os.path.dirname(__file__), 'anuncios.json')
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 def read_anuncios():
     if not os.path.exists(ANUNCIOS_FILE):
         return []
     with open(ANUNCIOS_FILE, 'r', encoding='utf-8') as f:
         return json.load(f)
+
 def save_anuncios(anuncios):
     with open(ANUNCIOS_FILE, 'w', encoding='utf-8') as f:
         json.dump(anuncios, f, ensure_ascii=False, indent=2)
+
+# Rota para criar anúncio com upload
 @app.route('/api/anuncios', methods=['POST'])
 def create_anuncio():
-    data = request.form
-    titulo = data.get('titulo')
-    tipo = data.get('tipo')
-    duracao = data.get('duracao')
-    arquivo = None
-    if 'arquivo' in request.files:
-        arquivo_obj = request.files['arquivo']
-        # Gera nome seguro e único
-        filename = f"{uuid.uuid4()}_{secure_filename(arquivo_obj.filename)}"
-        caminho = os.path.join(UPLOAD_FOLDER, filename)
-        arquivo_obj.save(caminho)
-        arquivo = filename
-    anuncio = {
-        '_id': str(uuid.uuid4()),
-        'titulo': titulo,
-        'tipo': tipo,
-        'duracao': duracao,
-        'arquivo': arquivo
-    }
-    anuncios = read_anuncios()
-    anuncios.append(anuncio)
-    save_anuncios(anuncios)
-    return jsonify({'message': 'Anúncio criado com sucesso!', 'anuncio': anuncio}), 201
-
-@app.route('/uploads/<filename>')
-def get_upload(filename):
-    return send_from_directory(UPLOAD_FOLDER, filename)
+    try:
+        # Obter o token do cabeçalho de autorização
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Token de autenticação não fornecido'}), 401
+            
+        token = auth_header.split(' ')[1]
+        
+        try:
+            # Decodificar o token para obter o email do usuário
+            decoded = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_email = decoded['email']
+        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError) as e:
+            return jsonify({'error': 'Token inválido ou expirado'}), 401
+        
+        data = request.form
+        
+        # Verificar se o usuário existe
+        users = read_users()
+        user = next((u for u in users if u['email'] == user_email), None)
+        if not user:
+            return jsonify({'error': 'Usuário não encontrado'}), 404
+            
+        titulo = data.get('titulo')
+        tipo = data.get('tipo')
+        duracao = data.get('duracao')
+        arquivo = None
+        
+        if 'arquivo' in request.files:
+            arquivo_obj = request.files['arquivo']
+            # Gera nome seguro e único
+            filename = f"{uuid.uuid4()}_{secure_filename(arquivo_obj.filename)}"
+            caminho = os.path.join(UPLOAD_FOLDER, filename)
+            arquivo_obj.save(caminho)
+            arquivo = filename
+            
+        anuncio = {
+            '_id': str(uuid.uuid4()),
+            'titulo': titulo,
+            'tipo': tipo,
+            'duracao': duracao,
+            'arquivo': arquivo,
+            'usuario': user_email,  # Usando o email do token JWT
+            'data_criacao': datetime.now().isoformat()
+        }
+        
+        anuncios = read_anuncios()
+        anuncios.append(anuncio)
+        save_anuncios(anuncios)
+        
+        return jsonify({'message': 'Anúncio criado com sucesso!', 'anuncio': anuncio}), 201
+        
+    except Exception as e:
+        print('Erro ao criar anúncio:', str(e))
+        return jsonify({'error': 'Erro ao criar anúncio'}), 500
 
 @app.route('/api/anuncios/meus', methods=['GET'])
 def get_anuncios_meus():
-    anuncios = read_anuncios()
-    return jsonify(anuncios)
+    # Obter o token do cabeçalho de autorização
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return jsonify({'error': 'Token de autenticação não fornecido'}), 401
+    
+    token = auth_header.split(' ')[1]
+    
+    try:
+        # Decodificar o token para obter o email do usuário
+        decoded = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        user_email = decoded['email']
+        
+        # Filtrar anúncios pelo email do usuário
+        anuncios = read_anuncios()
+        anuncios_usuario = [a for a in anuncios if a.get('usuario') == user_email]
+        
+        return jsonify(anuncios_usuario)
+    except jwt.ExpiredSignatureError:
+        return jsonify({'error': 'Token expirado'}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({'error': 'Token inválido'}), 401
 
 @app.route('/api/anuncios/<id>', methods=['PATCH'])
 def patch_anuncio(id):
+    # Verificar autenticação
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return jsonify({'error': 'Token de autenticação não fornecido'}), 401
+    
+    token = auth_header.split(' ')[1]
+    
+    try:
+        # Decodificar o token para obter o email do usuário
+        decoded = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        user_email = decoded['email']
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError) as e:
+        return jsonify({'error': 'Token inválido ou expirado'}), 401
+    
     data = request.json
     anuncios = read_anuncios()
     anuncio = next((a for a in anuncios if a['_id'] == id), None)
+    
     if not anuncio:
         return jsonify({'error': 'Anúncio não encontrado'}), 404
+    
+    # Verificar se o usuário é o dono do anúncio
+    if anuncio.get('usuario') != user_email:
+        return jsonify({'error': 'Você não tem permissão para editar este anúncio'}), 403
+    
     # Atualiza apenas campos permitidos
     for campo in ['titulo', 'tipo', 'duracao']:
         if campo in data:
             anuncio[campo] = data[campo]
+    
     save_anuncios(anuncios)
     return jsonify({'message': 'Anúncio atualizado com sucesso!', 'anuncio': anuncio})
 
 @app.route('/api/anuncios/<id>', methods=['DELETE'])
 def delete_anuncio(id):
+    # Verificar autenticação
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return jsonify({'error': 'Token de autenticação não fornecido'}), 401
+    
+    token = auth_header.split(' ')[1]
+    
+    try:
+        # Decodificar o token para obter o email do usuário
+        decoded = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        user_email = decoded['email']
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError) as e:
+        return jsonify({'error': 'Token inválido ou expirado'}), 401
+    
     anuncios = read_anuncios()
     anuncio = next((a for a in anuncios if a['_id'] == id), None)
+    
     if not anuncio:
         return jsonify({'error': 'Anúncio não encontrado'}), 404
+    
+    # Verificar se o usuário é o dono do anúncio
+    if anuncio.get('usuario') != user_email:
+        return jsonify({'error': 'Você não tem permissão para excluir este anúncio'}), 403
+    
     # Excluir arquivo do disco, se existir
     if anuncio.get('arquivo'):
         caminho = os.path.join(UPLOAD_FOLDER, anuncio['arquivo'])
@@ -341,6 +550,7 @@ def delete_anuncio(id):
                 os.remove(caminho)
             except Exception as e:
                 print(f'Erro ao excluir arquivo: {e}')
+    
     # Remove do json
     anuncios = [a for a in anuncios if a['_id'] != id]
     save_anuncios(anuncios)
@@ -380,8 +590,16 @@ async def notify_outdoor_update(outdoor_id):
 if __name__ == '__main__':
     @app.route('/api/outdoor/<outdoor_id>/player/reload', methods=['POST'])
     def reload_player(outdoor_id):
-        """Endpoint para recarregar um player específico"""
-        socketio.emit('reloadPlayer', {'outdoor_id': outdoor_id})
-        return jsonify({'message': f'Comando de recarregamento enviado para outdoor {outdoor_id}'}), 200
+        # Verificar se é uma Smart TV
+        if is_smart_tv(request):
+            # Para Smart TVs, enviar mensagem específica
+            socketio.emit('reloadPlayer', {
+                'outdoor_id': outdoor_id,
+                'device_type': 'smart-tv'
+        }, broadcast=True)
+        else:
+            socketio.emit('reloadPlayer', {'outdoor_id': outdoor_id})
+        
+        return jsonify({'message': 'Comando de recarregamento enviado'}), 200
 
     socketio.run(app, host='0.0.0.0', port=3000, debug=True)

@@ -725,14 +725,26 @@
                 const token = localStorage.getItem('token');
                 if (!token) {
                     console.error('Token não encontrado');
+                    alert('Sessão expirada. Por favor, faça login novamente.');
+                    window.location.href = 'index.html';
                     return;
                 }
 
                 const response = await fetch('/api/anuncios/meus', {
                     headers: {
-                        'Authorization': `Bearer ${token}`
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
                     }
                 });
+
+                if (response.status === 401) {
+                    // Token inválido ou expirado
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    alert('Sessão expirada. Por favor, faça login novamente.');
+                    window.location.href = 'index.html';
+                    return;
+                }
 
                 console.log('Status da resposta:', response.status);
                 const anuncios = await response.json();
@@ -979,6 +991,22 @@ async function salvarEdicaoAnuncioVinculado(outdoorId, anuncioId) {
             event.preventDefault();
             console.log('Iniciando criação de anúncio');
             
+            // Obter o token do localStorage
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('Sessão expirada. Por favor, faça login novamente.');
+                window.location.href = 'index.html';
+                return;
+            }
+
+            // Obter o usuário do localStorage
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            if (!user || !user.email) {
+                alert('Usuário não encontrado. Por favor, faça login novamente.');
+                window.location.href = 'index.html';
+                return;
+            }
+
             const formData = new FormData();
             const titulo = document.getElementById('anuncio-titulo').value.trim();
             const tipo = document.getElementById('anuncio-tipo').value;
@@ -1032,6 +1060,7 @@ async function salvarEdicaoAnuncioVinculado(outdoorId, anuncioId) {
             formData.append('tipo', tipo);
             formData.append('arquivo', arquivo);
             formData.append('duracao', duracao);
+            // Não é mais necessário enviar o usuário no formData, pois será obtido do token JWT
 
             try {
                 console.log('Enviando requisição para criar anúncio');
@@ -1316,6 +1345,14 @@ if (anunciosResponse.status === 404) {
     .catch(() => alert('Erro ao carregar anúncio para player.'));
 }
 window.startPlayer = startPlayer;
+
+        // Função para fazer logout
+        function logout() {
+            // Remove o token do localStorage
+            localStorage.removeItem('token');
+            // Redireciona para a página de login
+            window.location.href = 'index.html';
+        }
 </script>
 </body>
 </html>

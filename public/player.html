@@ -4,7 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Player Outdoor</title>
+    <!-- Melhorias para Smart TVs -->
     <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+    <script>
+        // Configurações para Smart TVs
+        const IS_SMART_TV = navigator.userAgent.includes('LG') || navigator.userAgent.includes('webOS');
+        const SERVER_URL = IS_SMART_TV ? 'https://osmarads.onrender.com' : 'http://localhost:3000';
+        const FALLBACK_URL = 'http://localhost:3000';
+        
+        // Configuração do Socket.IO
+        const socket = io(SERVER_URL, {
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            timeout: 10000
+        });
+    </script>
     <style>
         * {
             margin: 0;
@@ -193,7 +209,16 @@
     <div class="player-container">
         <div class="status">Status do Player</div>
         <div class="video-container">
-            <video autoplay muted playsinline></video>
+            <video id="player" 
+                class="video-js vjs-default-skin" 
+                playsinline
+                muted
+                controls
+                preload="auto"
+                width="1280"
+                height="720"
+                data-setup='{"fluid": true, "autoplay": true, "preload": "auto", "controls": true}'>
+            </video>
             <button class="fullscreen-btn" title="Tela Cheia">Fullscreen</button>
             <div class="info-screen" style="display: none;">
                 <div class="info-content">
@@ -207,22 +232,53 @@
 
         <script>
             // Inicializar variáveis globais
-            const socket = io('http://localhost:3000');
             let currentOutdoorId = null;
             let currentAnuncio = 0;
             let anuncios = [];
-            let interval = null;
+            let infoTimeout = null;
+            let isShowingInfo = false;
+            let currentTimeout = null; // Timeout para retry de reprodução
+            const INFO_DURATION = 5000; // 5 segundos
             let player = null;
             let status = null;
             let fullscreenBtn = null;
             let infoScreen = null;
             let currentDate = null;
             let currentTime = null;
-            let isShowingInfo = false;
-            const INFO_DURATION = 5000; // 5 segundos
 
-            // Configurar Socket.IO
+            // Função para configurar o socket
             function setupSocket() {
+                try {
+                    if (socket) {
+                        socket.disconnect();
+                    }
+                    
+                    socket = io(SERVER_URL, {
+                        transports: ['websocket', 'polling'],
+                        reconnection: true,
+                        reconnectionDelay: 1000,
+                        reconnectionDelayMax: 5000,
+                        timeout: 10000
+                    });
+                } catch (error) {
+                    console.error('Erro ao conectar com o servidor principal:', error);
+                    try {
+                        // Tentar conectar com o servidor de fallback
+                        socket = io(FALLBACK_URL, {
+                            reconnection: true,
+                            reconnectionDelay: 1000,
+                            reconnectionDelayMax: 5000,
+                            reconnectionAttempts: 5
+                        });
+                    } catch (fallbackError) {
+                        console.error('Erro ao conectar com o servidor de fallback:', fallbackError);
+                        if (status) {
+                            status.textContent = 'Erro ao conectar com o servidor';
+                        }
+                        return;
+                    }
+                }
+
                 // Evento para recarregar o player
                 socket.on('reloadPlayer', (data) => {
                     if (data.outdoor_id === currentOutdoorId) {
@@ -230,12 +286,28 @@
                         window.location.reload();
                     }
                 });
+
+                // Evento de erro de conexão
+                socket.on('connect_error', (error) => {
+                    console.error('Erro de conexão:', error);
+                    if (status) {
+                        status.textContent = 'Erro de conexão com o servidor';
+                    }
+                });
+
+                // Evento de reconexão
+                socket.on('reconnect', () => {
+                    console.log('Reconectado ao servidor');
+                    if (status) {
+                        status.textContent = 'Reconectado ao servidor';
+                    }
+                });
             }
 
             // Função para inicializar elementos do DOM
             function initElements() {
                 try {
-                    player = document.querySelector('video');
+                    player = document.getElementById('player');
                     status = document.querySelector('.status');
                     infoScreen = document.querySelector('.info-screen');
                     currentDate = document.getElementById('currentDate');
@@ -270,10 +342,30 @@
                 // Atualizar ícone do botão quando entrar/sair do modo tela cheia
                 document.addEventListener('fullscreenchange', updateFullscreenButton);
 
-                // Adicionar suporte a teclas de controle remoto
+                // Adicionar suporte a teclas de controle remoto para Smart TVs
                 document.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
+                    // Teclas padrão
+                    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Return') {
                         toggleFullscreen();
+                    }
+                    
+                    // Teclas específicas do controle remoto LG WebOS
+                    const webOSKeys = {
+                        'KEY_RETURN': 'Enter',
+                        'KEY_ENTER': 'Enter',
+                        'KEY_SPACE': 'Space',
+                        'KEY_PLAY': 'Play',
+                        'KEY_PAUSE': 'Pause'
+                    };
+                    
+                    // Verificar se é uma tecla do WebOS
+                    if (e.detail && e.detail.keycode) {
+                        const webOSKey = webOSKeys[e.detail.keycode];
+                        if (webOSKey) {
+                            if (webOSKey === 'Enter' || webOSKey === 'Space') {
+                                toggleFullscreen();
+                            }
+                        }
                     }
                 });
             }
@@ -399,17 +491,37 @@
                 }
             }
 
-            // Função para alternar tela cheia
+            // Função para alternar tela cheia com suporte a Smart TVs
             function toggleFullscreen() {
                 try {
-                    if (document.fullscreenElement) {
-                        document.exitFullscreen();
+                    // Verificar se estamos em uma Smart TV
+                    if (IS_SMART_TV) {
+                        // Para Smart TVs LG, usar o modo de tela cheia do WebOS
+                        if (window.WebOS) {
+                            window.WebOS.requestFullScreen();
+                        } else {
+                            // Tentar usar o modo de tela cheia padrão
+                            if (document.fullscreenElement) {
+                                document.exitFullscreen();
+                            } else {
+                                player.requestFullscreen();
+                                infoScreen.classList.add('fullscreen');
+                            }
+                        }
                     } else {
-                        player.requestFullscreen();
-                        infoScreen.classList.add('fullscreen');
+                        // Para outros dispositivos
+                        if (document.fullscreenElement) {
+                            document.exitFullscreen();
+                        } else {
+                            player.requestFullscreen();
+                            infoScreen.classList.add('fullscreen');
+                        }
                     }
                 } catch (error) {
                     console.error('Erro ao alternar tela cheia:', error);
+                    if (status) {
+                        status.textContent = 'Erro ao alternar tela cheia';
+                    }
                 }
             }
 
@@ -420,7 +532,7 @@
                 }
             }
 
-            // Função para carregar e reproduzir o anúncio atual
+            // Função para carregar e reproduzir o anúncio atual com cache
             async function loadCurrentAnuncio() {
                 if (!player || currentAnuncio >= anuncios.length) return;
 
@@ -428,23 +540,100 @@
                     const anuncio = anuncios[currentAnuncio];
                     console.log('Carregando anúncio:', anuncio.titulo);
 
-                    // Configurar o source do video usando o nome do arquivo do anúncio
-                    player.src = `/uploads/${anuncio.arquivo}`;
+                    // Carregar o vídeo diretamente do servidor
+                    const videoSrc = `/uploads/${anuncio.arquivo}`;
+                    console.log('URL do vídeo:', videoSrc);
                     
-                    // Configurar autoplay e muted
-                    player.autoplay = true;
-                    player.muted = true;
-                    player.playsInline = true;
+                    // Criar source element
+                    const source = document.createElement('source');
+                    source.src = videoSrc;
+                    source.type = 'video/mp4';
                     
+                    // Limpar sources existentes
+                    Array.from(player.getElementsByTagName('source')).forEach(s => s.remove());
+                    
+                    // Adicionar novo source
+                    player.appendChild(source);
+                    
+                    // Configurar atributos do player
+                    player.setAttribute('autoplay', 'autoplay');
+                    player.setAttribute('muted', 'muted');
+                    player.setAttribute('playsinline', 'playsinline');
+                    player.setAttribute('preload', 'preload');
+                    
+                    // Configurar atributos do player
+                    player.setAttribute('autoplay', true);
+                    player.setAttribute('muted', true);
+                    player.setAttribute('playsinline', true);
+                        
                     // Tentar carregar o vídeo
                     try {
+                        // Adicionar ouvintes de eventos para monitorar o carregamento
+                        player.addEventListener('loadedmetadata', () => {
+                            console.log('Metadados do vídeo carregados');
+                            if (status) {
+                                status.textContent = `Carregando: ${anuncio.titulo}`;
+                            }
+                        });
+                        
+                        player.addEventListener('canplay', () => {
+                            console.log('Vídeo pronto para reprodução');
+                            if (status) {
+                                status.textContent = `Pronto para reproduzir: ${anuncio.titulo}`;
+                            }
+                        });
+                        
+                        player.addEventListener('error', (error) => {
+                            console.error('Erro no vídeo:', error);
+                            if (status) {
+                                status.textContent = `Erro: ${error.target.error.code}`;
+                            }
+                        });
+                        
+                        // Carregar o vídeo
                         await player.load();
                         
-                        // Esperar um pouco antes de tentar reproduzir
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-                        
-                        // Reproduzir o vídeo
-                        await player.play();
+                        // Verificar se o vídeo carregou corretamente
+                        if (player.readyState >= 2) { // HAVE_CURRENT_DATA
+                            console.log('Vídeo carregado com sucesso');
+                            
+                            // Reproduzir o vídeo
+                            try {
+                                // Limpar qualquer timeout existente
+                                if (currentTimeout) {
+                                    clearTimeout(currentTimeout);
+                                }
+                                
+                                // Tentar reproduzir
+                                await player.play();
+                                
+                                // Se ainda não reproduziu, tentar novamente
+                                if (player.paused) {
+                                    currentTimeout = setTimeout(async () => {
+                                        try {
+                                            await player.play();
+                                        } catch (retryError) {
+                                            console.error('Erro ao reproduzir (retry):', retryError);
+                                            if (status) {
+                                                status.textContent = `Erro ao reproduzir: ${retryError.message}`;
+                                            }
+                                        }
+                                    }, 1000);
+                                }
+                                
+                                if (status) {
+                                    status.textContent = `Reproduzindo: ${anuncio.titulo}`;
+                                }
+                            } catch (playError) {
+                                console.error('Erro ao reproduzir:', playError);
+                                if (status) {
+                                    status.textContent = `Erro ao reproduzir: ${playError.message}`;
+                                }
+                            }
+                        } else {
+                            console.error('Vídeo não carregou corretamente');
+                            throw new Error('Vídeo não carregou corretamente');
+                        }
                         
                         if (status) {
                             status.textContent = `Reproduzindo: ${anuncio.titulo}`;
@@ -466,14 +655,24 @@
                 }
             }
 
-            // Função principal para iniciar o player
+            // Função principal para iniciar o player com suporte a Smart TVs
             async function startPlayer(outdoorId) {
                 try {
                     console.log('Carregando anúncios para outdoor:', outdoorId);
-                    const response = await fetch(`/api/outdoors/${outdoorId}/anuncios`, {
-                        headers: {
-                            'Authorization': `Bearer ${localStorage.getItem('token')}`
-                        }
+                    
+                    // Configurar headers para Smart TVs
+                    const headers = {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'X-Device-Type': IS_SMART_TV ? 'smart-tv' : 'web'
+                    };
+                    
+                    // Configurar URL baseado no tipo de dispositivo
+                    const apiUrl = IS_SMART_TV 
+                        ? `https://osmarads.onrender.com/api/outdoors/${outdoorId}/anuncios` 
+                        : `/api/outdoors/${outdoorId}/anuncios`;
+                    
+                    const response = await fetch(apiUrl, {
+                        headers: headers
                     });
                     
                     if (!response.ok) {
