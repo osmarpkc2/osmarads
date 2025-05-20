@@ -1130,20 +1130,27 @@
             // Configurar eventos de teclado
             document.addEventListener('keydown', handleRemoteControl);
 
-            // Configurar eventos de atualização em tempo real
-            socket.on('outdoor_updated', (data) => {
-                console.log('Outdoor atualizado, recarregando anúncios...', data);
-                if (data.outdoor_id === currentOutdoorId) {
-                    loadAnuncios();
-                }
-            });
+            // Inicializar o socket se ainda não estiver inicializado
+            if (!socket) {
+                socket = initSocket();
+            }
 
-            socket.on('anuncio_updated', (data) => {
-                console.log('Anúncio atualizado, recarregando lista...', data);
-                if (data.outdoor_id === currentOutdoorId) {
-                    loadAnuncios();
-                }
-            });
+            // Configurar eventos de atualização em tempo real
+            if (socket) {
+                socket.on('outdoor_updated', (data) => {
+                    console.log('Outdoor atualizado, recarregando anúncios...', data);
+                    if (data.outdoor_id === currentOutdoorId) {
+                        loadAnuncios();
+                    }
+                });
+
+                socket.on('anuncio_updated', (data) => {
+                    console.log('Anúncio atualizado, recarregando lista...', data);
+                    if (data.outdoor_id === currentOutdoorId) {
+                        loadAnuncios();
+                    }
+                });
+            }
 
             // Configurar evento para recarregar o player
             socket.on('reloadPlayer', (data) => {
