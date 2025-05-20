@@ -14,9 +14,20 @@
         const IS_ANDROID_TV = userAgent.includes('android') && (userAgent.includes('tv') || userAgent.includes('tcl'));
         const IS_SMART_TV = IS_WEBOS || IS_TIZEN || IS_ANDROID_TV;
         
-        // Configurações de URL baseado no ambiente
+        // Configurações de URL e conexão otimizadas
         const SERVER_URL = 'https://osmarads.onrender.com';
-        const FALLBACK_URL = 'https://osmarads.onrender.com'; // Mesmo servidor como fallback
+        const CONFIG_SOCKET = {
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            timeout: 20000,
+            autoConnect: true,
+            transports: ['websocket'],
+            upgrade: false,
+            forceNew: true,
+            withCredentials: true
+        };
         
         // Configurações específicas por plataforma
         const TV_CONFIG = {
@@ -28,14 +39,63 @@
         
         console.log('Detectado dispositivo:', TV_CONFIG.platform);
         
-        // Configuração do Socket.IO
-        const socket = io(SERVER_URL, {
-            transports: ['websocket', 'polling'],
-            reconnection: true,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-            timeout: 10000
-        });
+        // Configuração otimizada do Socket.IO
+        let socket;
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 10;
+        
+        function initSocket() {
+            if (socket?.connected) return socket;
+            
+            console.log('Iniciando conexão Socket.IO...');
+            
+            // Fecha conexão existente se houver
+            if (socket) {
+                socket.close();
+                socket.removeAllListeners();
+            }
+            
+            // Cria nova instância do socket
+            socket = io(SERVER_URL, CONFIG_SOCKET);
+            
+            // Configura eventos
+            socket.on('connect', () => {
+                console.log('Conectado ao servidor');
+                reconnectAttempts = 0;
+                if (status) status.textContent = 'Conectado';
+                
+                // Reconecta ao outdoor atual se necessário
+                if (currentOutdoorId) {
+                    socket.emit('join_outdoor', { outdoor_id: currentOutdoorId });
+                }
+            });
+            
+            socket.on('disconnect', (reason) => {
+                console.log('Desconectado:', reason);
+                if (reason === 'io server disconnect' || reason === 'transport close') {
+                    // Reconecta automaticamente
+                    socket.connect();
+                }
+            });
+            
+            socket.on('connect_error', (error) => {
+                console.error('Erro de conexão:', error);
+                if (status) status.textContent = 'Erro de conexão, tentando reconectar...';
+                
+                // Tenta reconectar com backoff exponencial
+                reconnectAttempts++;
+                if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
+                    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+                    console.log(`Tentando reconectar em ${delay}ms (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+                    setTimeout(initSocket, delay);
+                }
+            });
+            
+            // Configura outros manipuladores de eventos
+            setupSocketHandlers(socket);
+            
+            return socket;
+        }
     </script>
     <style>
         * {
@@ -315,63 +375,12 @@
             // Função para configurar o socket
             function setupSocket() {
                 try {
-                    // Se já existe uma conexão, desconectar
-                    if (window.socketInstance) {
-                        window.socketInstance.disconnect();
-                    }
-                    
-                    console.log('Conectando ao servidor principal:', SERVER_URL);
-                    
-                    // Criar nova instância do socket
-                    window.socketInstance = io(SERVER_URL, {
-                        path: '/socket.io',
-                        transports: ['websocket', 'polling'],
-                        reconnection: true,
-                        reconnectionDelay: 1000,
-                        reconnectionDelayMax: 5000,
-                        reconnectionAttempts: 5,
-                        timeout: 20000,
-                        secure: true,
-                        rejectUnauthorized: false,
-                        withCredentials: true
-                    });
-                    
-                    console.log('Socket configurado para:', SERVER_URL);
-                    
-                    // Configurar manipuladores de eventos
-                    setupSocketHandlers(window.socketInstance);
-                    
+                    console.log('Iniciando configuração do socket...');
+                    window.socketInstance = initSocket();
                 } catch (error) {
-                    console.error('Erro ao conectar com o servidor principal:', error);
+                    console.error('Erro ao configurar o socket:', error);
                     if (status) {
-                        status.textContent = 'Tentando conexão alternativa...';
-                    }
-                    
-                    // Só tenta o fallback se for diferente do servidor principal
-                    if (FALLBACK_URL !== SERVER_URL) {
-                        try {
-                            console.log('Tentando conectar ao servidor de fallback:', FALLBACK_URL);
-                            
-                            // Tentar conectar com o servidor de fallback
-                            window.socketInstance = io(FALLBACK_URL, {
-                                transports: ['websocket', 'polling'],
-                                reconnection: true,
-                                reconnectionDelay: 1000,
-                                reconnectionDelayMax: 5000,
-                                reconnectionAttempts: 5,
-                                secure: true,
-                                rejectUnauthorized: false
-                            });
-                            
-                            // Configurar manipuladores de eventos
-                            setupSocketHandlers(window.socketInstance);
-                            
-                        } catch (fallbackError) {
-                            console.error('Erro ao conectar com o servidor de fallback:', fallbackError);
-                            if (status) {
-                                status.textContent = 'Erro ao conectar com o servidor';
-                            }
-                        }
+                        status.textContent = 'Erro ao configurar a conexão';
                     }
                 }
             }
@@ -604,121 +613,192 @@
                 }
             }
 
-            // Função para carregar e reproduzir o anúncio atual com cache
+            // Cache para vídeos já carregados
+            const videoCache = new Map();
+            let currentVideoElement = null;
+            let nextVideoElement = null;
+            let isPreloading = false;
+            
+            // Função para criar um novo elemento de vídeo otimizado
+            function createVideoElement() {
+                const video = document.createElement('video');
+                video.playsInline = true;
+                video.muted = true;
+                video.preload = 'auto';
+                video.style.display = 'none';
+                video.style.position = 'absolute';
+                video.style.top = '0';
+                video.style.left = '0';
+                video.style.width = '100%';
+                video.style.height = '100%';
+                video.style.objectFit = 'contain';
+                document.body.appendChild(video);
+                return video;
+            }
+            
+            // Função para limpar elementos de vídeo não utilizados
+            function cleanupUnusedVideos() {
+                const allVideos = Array.from(document.getElementsByTagName('video'));
+                allVideos.forEach(video => {
+                    if (video !== currentVideoElement && video !== nextVideoElement) {
+                        video.pause();
+                        video.removeAttribute('src');
+                        video.load();
+                        if (video.parentNode) {
+                            video.parentNode.removeChild(video);
+                        }
+                    }
+                });
+            }
+            
+            // Função para pré-carregar o próximo vídeo
+            function preloadNextVideo() {
+                if (isPreloading || !anuncios.length || currentAnuncio >= anuncios.length - 1) return;
+                
+                const nextAnuncio = anuncios[currentAnuncio + 1];
+                if (!nextAnuncio || !nextAnuncio.arquivo) return;
+                
+                const videoSrc = `/uploads/${nextAnuncio.arquivo}?t=${Date.now()}`;
+                
+                // Se já está no cache, não precisa pré-carregar novamente
+                if (videoCache.has(videoSrc)) {
+                    nextVideoElement = videoCache.get(videoSrc);
+                    return;
+                }
+                
+                isPreloading = true;
+                
+                // Criar novo elemento de vídeo para pré-carregar
+                const preloadVideo = createVideoElement();
+                
+                preloadVideo.oncanplay = () => {
+                    console.log('Pré-carregado:', nextAnuncio.titulo);
+                    videoCache.set(videoSrc, preloadVideo);
+                    nextVideoElement = preloadVideo;
+                    isPreloading = false;
+                    
+                    // Limpar vídeos antigos do cache
+                    if (videoCache.size > 3) {
+                        const keys = Array.from(videoCache.keys());
+                        for (let i = 0; i < keys.length - 3; i++) {
+                            const oldVideo = videoCache.get(keys[i]);
+                            if (oldVideo && oldVideo !== currentVideoElement && oldVideo !== nextVideoElement) {
+                                oldVideo.pause();
+                                oldVideo.removeAttribute('src');
+                                oldVideo.load();
+                                if (oldVideo.parentNode) {
+                                    oldVideo.parentNode.removeChild(oldVideo);
+                                }
+                                videoCache.delete(keys[i]);
+                            }
+                        }
+                    }
+                };
+                
+                preloadVideo.onerror = (error) => {
+                    console.error('Erro ao pré-carregar vídeo:', error);
+                    isPreloading = false;
+                    if (preloadVideo.parentNode) {
+                        preloadVideo.parentNode.removeChild(preloadVideo);
+                    }
+                };
+                
+                const source = document.createElement('source');
+                source.src = videoSrc;
+                source.type = 'video/mp4';
+                preloadVideo.appendChild(source);
+                preloadVideo.load();
+            }
+            
+            // Função para carregar e reproduzir o anúncio atual
             async function loadCurrentAnuncio(forceReload = false) {
                 if (!player || currentAnuncio >= anuncios.length) return;
-
+                
                 try {
                     const anuncio = anuncios[currentAnuncio];
                     console.log('Carregando anúncio:', anuncio.titulo);
-
-                    // Carregar o vídeo diretamente do servidor, forçando recarregamento se necessário
-                    let videoSrc = `/uploads/${anuncio.arquivo}`;
-                    if (forceReload) {
-                        // Adiciona um timestamp para evitar cache
-                        videoSrc += `?t=${new Date().getTime()}`;
-                        console.log('Forçando recarregamento do anúncio');
+                    
+                    if (status) {
+                        status.textContent = `Carregando: ${anuncio.titulo}`;
                     }
-                    console.log('URL do vídeo:', videoSrc);
                     
-                    // Criar source element
-                    const source = document.createElement('source');
-                    source.src = videoSrc;
-                    source.type = 'video/mp4';
+                    // Limpar eventos do vídeo anterior
+                    if (currentVideoElement) {
+                        currentVideoElement.onplay = null;
+                        currentVideoElement.onended = null;
+                        currentVideoElement.onerror = null;
+                        currentVideoElement.oncanplay = null;
+                    }
                     
-                    // Limpar sources existentes
-                    Array.from(player.getElementsByTagName('source')).forEach(s => s.remove());
+                    // Obter ou criar o elemento de vídeo
+                    const videoSrc = `/uploads/${anuncio.arquivo}${forceReload ? `?t=${Date.now()}` : ''}`;
                     
-                    // Adicionar novo source
-                    player.appendChild(source);
+                    if (videoCache.has(videoSrc)) {
+                        // Usar vídeo do cache
+                        currentVideoElement = videoCache.get(videoSrc);
+                    } else {
+                        // Criar novo elemento de vídeo
+                        currentVideoElement = createVideoElement();
+                        const source = document.createElement('source');
+                        source.src = videoSrc;
+                        source.type = 'video/mp4';
+                        currentVideoElement.appendChild(source);
+                        videoCache.set(videoSrc, currentVideoElement);
+                    }
                     
-                    // Configurar atributos do player
-                    player.setAttribute('autoplay', 'autoplay');
-                    player.setAttribute('muted', 'muted');
-                    player.setAttribute('playsinline', 'playsinline');
-                    player.setAttribute('preload', 'preload');
-                    
-                    // Configurar atributos do player
-                    player.setAttribute('autoplay', true);
-                    player.setAttribute('muted', true);
-                    player.setAttribute('playsinline', true);
-                        
-                    // Tentar carregar o vídeo
-                    try {
-                        // Adicionar ouvintes de eventos para monitorar o carregamento
-                        player.addEventListener('loadedmetadata', () => {
-                            console.log('Metadados do vídeo carregados');
-                            if (status) {
-                                status.textContent = `Carregando: ${anuncio.titulo}`;
-                            }
-                        });
-                        
-                        player.addEventListener('canplay', () => {
-                            console.log('Vídeo pronto para reprodução');
-                            if (status) {
-                                status.textContent = `Pronto para reproduzir: ${anuncio.titulo}`;
-                            }
-                        });
-                        
-                        player.addEventListener('error', (error) => {
-                            console.error('Erro no vídeo:', error);
-                            if (status) {
-                                status.textContent = `Erro: ${error.target.error.code}`;
-                            }
-                        });
-                        
-                        // Carregar o vídeo
-                        await player.load();
-                        
-                        // Verificar se o vídeo carregou corretamente
-                        if (player.readyState >= 2) { // HAVE_CURRENT_DATA
-                            console.log('Vídeo carregado com sucesso');
-                            
-                            // Reproduzir o vídeo
-                            try {
-                                // Limpar qualquer timeout existente
-                                if (currentTimeout) {
-                                    clearTimeout(currentTimeout);
-                                }
-                                
-                                // Tentar reproduzir
-                                await player.play();
-                                
-                                // Se ainda não reproduziu, tentar novamente
-                                if (player.paused) {
-                                    currentTimeout = setTimeout(async () => {
-                                        try {
-                                            await player.play();
-                                        } catch (retryError) {
-                                            console.error('Erro ao reproduzir (retry):', retryError);
-                                            if (status) {
-                                                status.textContent = `Erro ao reproduzir: ${retryError.message}`;
-                                            }
-                                        }
-                                    }, 1000);
-                                }
-                                
-                                if (status) {
-                                    status.textContent = `Reproduzindo: ${anuncio.titulo}`;
-                                }
-                            } catch (playError) {
-                                console.error('Erro ao reproduzir:', playError);
-                                if (status) {
-                                    status.textContent = `Erro ao reproduzir: ${playError.message}`;
-                                }
-                            }
-                        } else {
-                            console.error('Vídeo não carregou corretamente');
-                            throw new Error('Vídeo não carregou corretamente');
-                        }
-                        
+                    // Configurar eventos
+                    currentVideoElement.oncanplay = () => {
+                        console.log('Vídeo pronto para reprodução:', anuncio.titulo);
                         if (status) {
                             status.textContent = `Reproduzindo: ${anuncio.titulo}`;
                         }
-                    } catch (error) {
-                        console.warn('Erro ao iniciar reprodução automática:', error);
-                        tryPlayVideo();
+                        // Iniciar pré-carregamento do próximo vídeo
+                        preloadNextVideo();
+                    };
+                    
+                    currentVideoElement.onended = handleVideoEnded;
+                    
+                    currentVideoElement.onerror = (error) => {
+                        console.error('Erro ao carregar vídeo:', error);
+                        if (status) {
+                            status.textContent = `Erro ao carregar: ${anuncio.titulo}`;
+                        }
+                        // Tentar o próximo vídeo em caso de erro
+                        setTimeout(handleVideoEnded, 2000);
+                    };
+                    
+                    // Substituir o vídeo no player
+                    while (player.firstChild) {
+                        player.removeChild(player.firstChild);
                     }
+                    
+                    player.appendChild(currentVideoElement);
+                    currentVideoElement.style.display = 'block';
+                    
+                    // Tentar reproduzir
+                    try {
+                        await currentVideoElement.play();
+                        console.log('Vídeo iniciado com sucesso');
+                    } catch (playError) {
+                        console.error('Erro ao reproduzir vídeo:', playError);
+                        if (status) {
+                            status.textContent = `Erro ao reproduzir: ${anuncio.titulo}`;
+                        }
+                        // Tentar novamente após um atraso
+                        setTimeout(() => {
+                            if (currentVideoElement) {
+                                currentVideoElement.play().catch(console.error);
+                            }
+                        }, 1000);
+                    }
+                    
+                    if (status) {
+                        status.textContent = `Reproduzindo: ${anuncio.titulo}`;
+                    }
+                    
+                    // Iniciar pré-carregamento do próximo vídeo
+                    preloadNextVideo();
+                    
                 } catch (error) {
                     console.error('Erro ao carregar anúncio:', error);
                     if (status) {
