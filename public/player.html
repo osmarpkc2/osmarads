@@ -375,13 +375,17 @@
             // Função para configurar o socket
             function setupSocket() {
                 try {
-                    console.log('Iniciando configuração do socket...');
-                    window.socketInstance = initSocket();
+                    if (!window.socketInstance || !window.socketInstance.connected) {
+                        console.log('Iniciando configuração do socket...');
+                        window.socketInstance = initSocket();
+                    }
+                    return window.socketInstance;
                 } catch (error) {
                     console.error('Erro ao configurar o socket:', error);
                     if (status) {
                         status.textContent = 'Erro ao configurar a conexão';
                     }
+                    return null;
                 }
             }
 
@@ -1221,7 +1225,10 @@
                     setInterval(updateInfoScreen, 1000);
 
                     // Configurar Socket.IO
-                    setupSocket();
+                    const socket = setupSocket();
+                    if (socket && currentOutdoorId) {
+                        socket.emit('join_outdoor', { outdoor_id: currentOutdoorId });
+                    }
 
                     // Configurar eventos de tela cheia
                     setupFullscreenEvents();
@@ -1230,14 +1237,16 @@
                     console.log('URL:', window.location.href);
                     console.log('Outdoor ID:', currentOutdoorId);
 
-                    // Entrar em tela cheia automaticamente
-                    if (player) {
-                        try {
-                            await player.requestFullscreen();
-                        } catch (error) {
-                            console.error('Erro ao entrar em tela cheia:', error);
-                        }
-                    }
+                    // Adicionar botão para ativar tela cheia
+                    const fullscreenBtn = document.createElement('button');
+                    fullscreenBtn.textContent = 'Tela Cheia';
+                    fullscreenBtn.style.position = 'fixed';
+                    fullscreenBtn.style.bottom = '10px';
+                    fullscreenBtn.style.right = '10px';
+                    fullscreenBtn.style.padding = '10px';
+                    fullscreenBtn.style.zIndex = '1000';
+                    fullscreenBtn.onclick = toggleFullscreen;
+                    document.body.appendChild(fullscreenBtn);
                 } catch (error) {
                     console.error('Erro durante inicialização:', error);
                     if (status) {
