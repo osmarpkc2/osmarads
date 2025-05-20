@@ -629,14 +629,14 @@
                 video.playsInline = true;
                 video.muted = true;
                 video.preload = 'auto';
-                video.style.display = 'none';
+                video.style.display = 'block';
                 video.style.position = 'absolute';
                 video.style.top = '0';
                 video.style.left = '0';
                 video.style.width = '100%';
                 video.style.height = '100%';
                 video.style.objectFit = 'contain';
-                document.body.appendChild(video);
+                video.style.visibility = 'hidden';
                 return video;
             }
             
@@ -776,7 +776,14 @@
                         player.removeChild(player.firstChild);
                     }
                     
+                    // Esconder o vídeo atual se existir
+                    if (currentVideoElement) {
+                        currentVideoElement.style.visibility = 'hidden';
+                    }
+                    
+                    // Adicionar e mostrar o novo vídeo
                     player.appendChild(currentVideoElement);
+                    currentVideoElement.style.visibility = 'visible';
                     currentVideoElement.style.display = 'block';
                     
                     // Tentar reproduzir
