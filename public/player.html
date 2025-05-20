@@ -140,39 +140,48 @@
         }
 
         .video-container {
-            width: 100%;
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            position: relative;
-            overflow: hidden;
-            background-color: #000;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background-color: #000 !important;
+            z-index: 1 !important;
             border: 2px solid red; /* Apenas para debug */
         }
 
         #player {
-            width: 100% !important;
-            height: 100% !important;
-            object-fit: contain !important;
             position: absolute !important;
             top: 0 !important;
             left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
             background-color: #000 !important;
             display: block !important;
             visibility: visible !important;
+            z-index: 2 !important;
         }
         
         #player video {
-            width: 100% !important;
-            height: 100% !important;
-            object-fit: contain !important;
             position: absolute !important;
             top: 0 !important;
             left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            object-fit: contain !important;
             background-color: #000 !important;
             display: block !important;
             visibility: visible !important;
+            z-index: 3 !important;
         }
 
         .fullscreen-btn {
@@ -755,7 +764,10 @@
                     }
                     
                     // Obter ou criar o elemento de vídeo
-                    const videoSrc = `/uploads/${anuncio.arquivo}${forceReload ? `?t=${Date.now()}` : ''}`;
+                    const videoSrc = anuncio.arquivo.startsWith('http') ? 
+                        anuncio.arquivo : 
+                        `/uploads/${anuncio.arquivo}${forceReload ? `?t=${Date.now()}` : ''}`;
+                    console.log('Caminho do vídeo:', videoSrc);
                     
                     if (videoCache.has(videoSrc)) {
                         // Usar vídeo do cache
@@ -808,12 +820,32 @@
                     
                     // Adicionar e mostrar o novo vídeo
                     console.log('Adicionando vídeo ao player:', currentVideoElement);
+                    console.log('Player element:', player);
+                    console.log('Player children before append:', player.children.length);
+                    
+                    // Limpar o player
+                    while (player.firstChild) {
+                        player.removeChild(player.firstChild);
+                    }
+                    
+                    // Adicionar o vídeo
                     player.appendChild(currentVideoElement);
+                    console.log('Player children after append:', player.children.length);
+                    
+                    // Estilos para garantir visibilidade
                     currentVideoElement.style.visibility = 'visible';
                     currentVideoElement.style.display = 'block';
+                    currentVideoElement.style.position = 'absolute';
+                    currentVideoElement.style.top = '0';
+                    currentVideoElement.style.left = '0';
+                    currentVideoElement.style.width = '100%';
+                    currentVideoElement.style.height = '100%';
+                    currentVideoElement.style.objectFit = 'contain';
+                    currentVideoElement.style.backgroundColor = '#000';
                     
                     // Forçar redesenho
-                    currentVideoElement.offsetHeight;
+                    const dummy = currentVideoElement.offsetHeight;
+                    console.log('Redesenho forçado, dummy:', dummy);
                     
                     // Tentar reproduzir
                     try {
