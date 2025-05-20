@@ -98,11 +98,54 @@
         }
     </script>
     <style>
+        /* Reset CSS */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
+        
+        /* Estilos base para o player */
+        html, body, #player {
+            width: 100% !important;
+            height: 100% !important;
+            overflow: hidden !important;
+            background-color: #000 !important;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        
+        #video-container {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            background-color: #000 !important;
+            z-index: 1000 !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+        }
+        
+        #main-video {
+            max-width: 100% !important;
+            max-height: 100% !important;
+            width: auto !important;
+            height: auto !important;
+            object-fit: contain !important;
+            display: block !important;
+            visibility: visible !important;
+            position: relative !important;
+            margin: 0 auto !important;
+        }
+        
+        /* Estilos existentes */
 
         body {
             background: #000;
@@ -136,10 +179,10 @@
             background: rgba(0, 0, 0, 0.7);
             padding: 10px 20px;
             border-radius: 5px;
-            z-index: 1000;
+            z-index: 100001;
+            font-family: monospace;
         }
-
-        /* Reset de estilos */
+        
         * {
             box-sizing: border-box;
             margin: 0;
@@ -335,32 +378,16 @@
             .date {
                 font-size: 20px;
             }
-        }
-    </style>
-</head>
-<body>
-    <div class="player-container">
-        <div class="status">Status do Player</div>
-        <div class="video-container">
-            <video id="player" 
-                class="video-js vjs-default-skin" 
-                playsinline
-                muted
-                controls
-                preload="auto"
-                width="1280"
-                height="720"
-                data-setup='{"fluid": true, "autoplay": true, "preload": "auto", "controls": true}'>
-            </video>
-            <button class="fullscreen-btn" title="Tela Cheia">Fullscreen</button>
-            <div class="info-screen" style="display: none;">
-                <div class="info-content">
-                    <div class="date-time">
-                        <div class="date" id="currentDate"></div>
-                        <div class="time" id="currentTime"></div>
-                    </div>
-                </div>
-            </div>
+        </style>
+    </head>
+    <body>
+        <div id="player">
+            <!-- O vídeo será inserido aqui via JavaScript -->
+        </div>
+        
+        <!-- Elemento para feedback de depuração -->
+        <div id="debug-info" style="position: fixed; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.7); padding: 10px; z-index: 10000; font-family: monospace;">
+            Carregando...
         </div>
 
         <script>
@@ -899,43 +926,62 @@
                     // Limpar o player completamente
                     player.innerHTML = '';
                     
-                    // Criar um container principal para o vídeo
+                    // Criar um container simples para o vídeo
                     const videoContainer = document.createElement('div');
-                    videoContainer.style.position = 'absolute';
+                    videoContainer.id = 'video-container';
+                    videoContainer.style.position = 'fixed';
                     videoContainer.style.top = '0';
                     videoContainer.style.left = '0';
                     videoContainer.style.width = '100%';
                     videoContainer.style.height = '100%';
-                    videoContainer.style.overflow = 'hidden';
                     videoContainer.style.backgroundColor = '#000';
-                    
-                    // Criar wrapper para o vídeo
-                    const videoWrapper = document.createElement('div');
-                    videoWrapper.style.position = 'absolute';
-                    videoWrapper.style.top = '50%';
-                    videoWrapper.style.left = '50%';
-                    videoWrapper.style.transform = 'translate(-50%, -50%)';
-                    videoWrapper.style.width = '100%';
-                    videoWrapper.style.height = '100%';
-                    videoWrapper.style.display = 'flex';
-                    videoWrapper.style.justifyContent = 'center';
-                    videoWrapper.style.alignItems = 'center';
+                    videoContainer.style.zIndex = '1000';
                     
                     // Configurar o elemento de vídeo
-                    currentVideoElement.style.maxWidth = '100%';
-                    currentVideoElement.style.maxHeight = '100%';
-                    currentVideoElement.style.width = 'auto';
-                    currentVideoElement.style.height = 'auto';
-                    currentVideoElement.style.display = 'block';
-                    currentVideoElement.style.visibility = 'visible';
+                    currentVideoElement.id = 'main-video';
+                    currentVideoElement.style.width = '100%';
+                    currentVideoElement.style.height = '100%';
                     currentVideoElement.style.objectFit = 'contain';
+                    currentVideoElement.playsInline = true;
+                    currentVideoElement.muted = true;
+                    currentVideoElement.autoplay = true;
+                    currentVideoElement.preload = 'auto';
+                    currentVideoElement.controls = true; // Temporário para debug
                     
-                    // Montar a estrutura do DOM
-                    videoWrapper.appendChild(currentVideoElement);
-                    videoContainer.appendChild(videoWrapper);
+                    // Adicionar evento de erro para debug
+                    currentVideoElement.onerror = function(e) {
+                        console.error('Erro ao carregar o vídeo:', e);
+                        console.error('Caminho do vídeo:', videoSrc);
+                        console.error('Elemento de vídeo:', currentVideoElement);
+                    };
+                    
+                    // Adicionar evento de carregamento
+                    currentVideoElement.onloadeddata = function() {
+                        console.log('Vídeo carregado com sucesso');
+                        console.log('Dimensões do vídeo:', 
+                            currentVideoElement.videoWidth + 'x' + currentVideoElement.videoHeight);
+                    };
+                    
+                    // Criar elemento source
+                    const sourceElement = document.createElement('source');
+                    sourceElement.src = videoSrc;
+                    sourceElement.type = 'video/mp4';
+                    
+                    // Limpar fontes antigas e adicionar a nova
+                    while (currentVideoElement.firstChild) {
+                        currentVideoElement.removeChild(currentVideoElement.firstChild);
+                    }
+                    currentVideoElement.appendChild(sourceElement);
+                    
+                    // Adicionar o vídeo ao container
+                    videoContainer.appendChild(currentVideoElement);
+                    
+                    // Adicionar o container ao player
                     player.appendChild(videoContainer);
                     
                     console.log('Estrutura do player montada com sucesso');
+                    console.log('Elemento de vídeo:', currentVideoElement);
+                    console.log('Fonte do vídeo:', videoSrc);
                     
                     // Forçar redesenho
                     const dummy = currentVideoElement.offsetHeight;
@@ -1102,10 +1148,46 @@
                 
                 switch(action) {
                     case 'enter':
-                    case 'select':
-                        actionName = 'enter';
-                        toggleFullscreen();
-                        break;
+                    // Adicionar estilos CSS inline como fallback
+                    const style = document.createElement('style');
+                    style.textContent = `
+                        #player {
+                            position: fixed !important;
+                            top: 0 !important;
+                            left: 0 !important;
+                            width: 100vw !important;
+                            height: 100vh !important;
+                            background-color: #000 !important;
+                            z-index: 9999 !important;
+                            padding: 0 !important;
+                            margin: 0 !important;
+                        }
+                        .video-js {
+                            width: 100% !important;
+                            height: 100% !important;
+                            padding-top: 0 !important;
+                        }
+                        .vjs-tech {
+                            object-fit: contain !important;
+                            width: 100% !important;
+                            height: 100% !important;
+                            position: absolute !important;
+                            top: 0 !important;
+                            left: 0 !important;
+                        }
+                        #video-container {
+                            position: fixed !important;
+                            top: 0 !important;
+                            left: 0 !important;
+                            width: 100vw !important;
+                            height: 100vh !important;
+                            z-index: 10000 !important;
+                        }
+                    `;
+                    document.head.appendChild(style);
+                    actionName = 'enter';
+                    toggleFullscreen();
+                    break;
                         
                     case 'info':
                     case 'i':
