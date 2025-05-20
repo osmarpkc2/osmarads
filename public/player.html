@@ -766,8 +766,25 @@
                     // Obter ou criar o elemento de vídeo
                     const videoSrc = anuncio.arquivo.startsWith('http') ? 
                         anuncio.arquivo : 
-                        `/uploads/${anuncio.arquivo}${forceReload ? `?t=${Date.now()}` : ''}`;
+                        `https://osmarads.onrender.com/uploads/${anuncio.arquivo}${forceReload ? `?t=${Date.now()}` : ''}`;
                     console.log('Caminho do vídeo:', videoSrc);
+                    
+                    // Verificar se o vídeo está acessível
+                    try {
+                        const response = await fetch(videoSrc, { method: 'HEAD' });
+                        if (!response.ok) {
+                            throw new Error(`Arquivo não encontrado: ${videoSrc}`);
+                        }
+                        console.log('Vídeo encontrado e acessível');
+                    } catch (error) {
+                        console.error('Erro ao acessar o vídeo:', error);
+                        if (status) {
+                            status.textContent = `Erro: ${error.message}`;
+                        }
+                        // Tentar o próximo anúncio em caso de erro
+                        setTimeout(handleVideoEnded, 2000);
+                        return;
+                    }
                     
                     if (videoCache.has(videoSrc)) {
                         // Usar vídeo do cache
@@ -785,11 +802,22 @@
                     // Configurar eventos
                     currentVideoElement.oncanplay = () => {
                         console.log('Vídeo pronto para reprodução:', anuncio.titulo);
+                        console.log('Duração do vídeo:', currentVideoElement.duration);
                         if (status) {
                             status.textContent = `Reproduzindo: ${anuncio.titulo}`;
                         }
+                        // Forçar o vídeo a ser visível
+                        currentVideoElement.style.visibility = 'visible';
+                        currentVideoElement.style.display = 'block';
                         // Iniciar pré-carregamento do próximo vídeo
                         preloadNextVideo();
+                    };
+                    
+                    // Adicionar evento para quando o vídeo começar a tocar
+                    currentVideoElement.onplaying = () => {
+                        console.log('Vídeo começou a tocar:', anuncio.titulo);
+                        currentVideoElement.style.visibility = 'visible';
+                        currentVideoElement.style.display = 'block';
                     };
                     
                     currentVideoElement.onended = handleVideoEnded;
