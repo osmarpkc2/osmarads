@@ -795,9 +795,20 @@
                     }
                     
                     // Obter ou criar o elemento de vídeo
-                    const videoSrc = anuncio.arquivo.startsWith('http') ? 
-                        anuncio.arquivo : 
-                        `https://osmarads.onrender.com/uploads/${anuncio.arquivo}${forceReload ? `?t=${Date.now()}` : ''}`;
+                    let videoSrc = anuncio.arquivo;
+                    
+                    // Se não for uma URL completa, montar a URL correta
+                    if (!videoSrc.startsWith('http')) {
+                        const baseUrl = window.location.protocol + '//' + window.location.host;
+                        videoSrc = `${baseUrl}/uploads/${anuncio.arquivo}`;
+                    }
+                    
+                    // Adicionar timestamp para evitar cache quando necessário
+                    if (forceReload) {
+                        const separator = videoSrc.includes('?') ? '&' : '?';
+                        videoSrc += `${separator}t=${Date.now()}`;
+                    }
+                    
                     console.log('Caminho do vídeo:', videoSrc);
                     
                     // Verificar se o vídeo está acessível
@@ -885,28 +896,46 @@
                     // Remover todos os filhos do player
                     player.innerHTML = '';
                     
-                    // Limpar o player
+                    // Limpar o player completamente
                     player.innerHTML = '';
                     
-                    // Criar um wrapper para o vídeo
+                    // Criar um container principal para o vídeo
+                    const videoContainer = document.createElement('div');
+                    videoContainer.style.position = 'absolute';
+                    videoContainer.style.top = '0';
+                    videoContainer.style.left = '0';
+                    videoContainer.style.width = '100%';
+                    videoContainer.style.height = '100%';
+                    videoContainer.style.overflow = 'hidden';
+                    videoContainer.style.backgroundColor = '#000';
+                    
+                    // Criar wrapper para o vídeo
                     const videoWrapper = document.createElement('div');
-                    videoWrapper.className = 'video-wrapper';
+                    videoWrapper.style.position = 'absolute';
+                    videoWrapper.style.top = '50%';
+                    videoWrapper.style.left = '50%';
+                    videoWrapper.style.transform = 'translate(-50%, -50%)';
+                    videoWrapper.style.width = '100%';
+                    videoWrapper.style.height = '100%';
+                    videoWrapper.style.display = 'flex';
+                    videoWrapper.style.justifyContent = 'center';
+                    videoWrapper.style.alignItems = 'center';
                     
-                    // Adicionar o vídeo ao wrapper
-                    videoWrapper.appendChild(currentVideoElement);
-                    
-                    // Adicionar o wrapper ao player
-                    player.appendChild(videoWrapper);
-                    
-                    console.log('Player children after append:', player.children.length);
-                    
-                    // Estilos para o vídeo
-                    currentVideoElement.style.display = 'block';
-                    currentVideoElement.style.visibility = 'visible';
+                    // Configurar o elemento de vídeo
                     currentVideoElement.style.maxWidth = '100%';
                     currentVideoElement.style.maxHeight = '100%';
                     currentVideoElement.style.width = 'auto';
                     currentVideoElement.style.height = 'auto';
+                    currentVideoElement.style.display = 'block';
+                    currentVideoElement.style.visibility = 'visible';
+                    currentVideoElement.style.objectFit = 'contain';
+                    
+                    // Montar a estrutura do DOM
+                    videoWrapper.appendChild(currentVideoElement);
+                    videoContainer.appendChild(videoWrapper);
+                    player.appendChild(videoContainer);
+                    
+                    console.log('Estrutura do player montada com sucesso');
                     
                     // Forçar redesenho
                     const dummy = currentVideoElement.offsetHeight;

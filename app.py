@@ -17,16 +17,17 @@ app.config['SECRET_KEY'] = os.urandom(24)  # Chave secreta para segurança
 # Configurar CORS para permitir conexões locais e Smart TVs
 CORS(app, resources={
     r"/*": {
-        "origins": ["https://osmarads.onrender.com", "http://localhost:3000"],
-        "methods": ["GET", "POST", "PUT", "DELETE"],
-        "allow_headers": ["Content-Type", "Authorization"]
+        "origins": ["https://osmarads.onrender.com", "http://localhost:3000", "https://osmarads.onrender.com:3000"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+        "supports_credentials": True
     }
 })
 
 # Configurar Socket.IO com suporte a Smart TVs e configurações de produção
 socketio = SocketIO(
     app,
-    cors_allowed_origins=["https://osmarads.onrender.com", "http://localhost:3000"],
+    cors_allowed_origins=["https://osmarads.onrender.com", "http://localhost:3000", "https://osmarads.onrender.com:3000"],
     ping_timeout=60,
     ping_interval=25,
     async_mode='eventlet',
@@ -34,7 +35,11 @@ socketio = SocketIO(
     engineio_logger=True,
     cors_credentials=True,
     allow_upgrades=True,
-    http_compression=True
+    http_compression=True,
+    cookie=None,
+    async_handlers=True,
+    always_connect=True,
+    transports=['websocket', 'polling']
 )
 
 # Função para verificar IP
@@ -170,20 +175,47 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Rota para servir arquivos de upload
-@app.route('/uploads/<filename>')
+@app.route('/uploads/<path:filename>')
 def serve_upload(filename):
     try:
-        file_path = os.path.join(UPLOAD_FOLDER, filename)
-        if not os.path.exists(file_path):
-            return jsonify({'error': f'Arquivo não encontrado: {filename}'}), 404
-            
-        return send_from_directory(UPLOAD_FOLDER, filename)
+        # Verificar se o arquivo existe de forma segura
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        if not os.path.isfile(filepath):
+            return jsonify({"error": "Arquivo não encontrado"}), 404
+        
+        # Determinar o tipo MIME com base na extensão
+        mimetype = 'application/octet-stream'
+        ext = filename.lower().split('.')[-1]
+        
+        if ext in ['png', 'jpg', 'jpeg', 'gif']:
+            mimetype = f'image/{ext}'
+        elif ext in ['mp4']:
+            mimetype = 'video/mp4'
+        elif ext in ['webm']:
+            mimetype = 'video/webm'
+        elif ext in ['ogg']:
+            mimetype = 'video/ogg'
+        
+        # Configurar cabeçalhos CORS
+        response = send_from_directory(
+            app.config['UPLOAD_FOLDER'],
+            filename,
+            mimetype=mimetype,
+            as_attachment=False,
+            conditional=True
+        )
+        
+        # Adicionar cabeçalhos de cache e CORS
+        response.headers['Cache-Control'] = 'public, max-age=31536000'  # 1 ano
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        
+        return response
+        
     except Exception as e:
-        print(f'Erro ao servir arquivo {filename}: {str(e)}')
-        return jsonify({
-            'error': 'Erro ao acessar arquivo',
-            'details': str(e)
-        }), 500
+        app.logger.error(f"Erro ao servir arquivo {filename}: {str(e)}")
+        return jsonify({"error": "Erro ao processar o arquivo"}), 500
 
 # Rota para servir qualquer arquivo da pasta public
 @app.route('/<path:filename>')
