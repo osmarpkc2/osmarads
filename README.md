@@ -16,13 +16,17 @@ Sistema web para gerenciamento de anúncios em outdoors digitais, permitindo que
 - **Backend:** Python (Flask)
 - **Frontend:** HTML, CSS, JavaScript
 - **Banco de Dados:** Arquivos JSON locais (`usuarios.json`, `outdoors.json`, `anuncios.json`)
+- **WebSockets:** Para atualizações em tempo real
+- **Deploy:** Render (PaaS)
 
 ## Requisitos
 
 - Python 3.8 ou superior
-- Flask (`pip install flask`)
+- Gunicorn
+- Eventlet
+- Veja `requirements.txt` para a lista completa de dependências
 
-## Instalação e Execução
+## Instalação e Execução Local
 
 1. Clone o repositório:
 ```bash
@@ -30,25 +34,72 @@ git clone [URL_DO_REPOSITORIO]
 cd outdoor
 ```
 
-2. Instale as dependências do Python:
+2. Crie e ative um ambiente virtual (recomendado):
 ```bash
-pip install flask
+python -m venv venv
+source venv/bin/activate  # No Windows: .\venv\Scripts\activate
 ```
 
-3. Inicie o servidor Flask:
+3. Instale as dependências:
+```bash
+pip install -r requirements.txt
+```
+
+4. Crie um arquivo `.env` baseado no `.env.example` e configure as variáveis de ambiente:
+```bash
+cp .env.example .env
+```
+
+5. Crie o diretório de uploads:
+```bash
+mkdir uploads
+```
+
+6. Inicie o servidor de desenvolvimento:
 ```bash
 python app.py
 ```
 
-4. Acesse o sistema pelo navegador:
+7. Acesse o sistema pelo navegador:
 ```
 http://localhost:3000
 ```
 
+## Implantação no Render
+
+1. Crie uma conta no [Render](https://render.com/) se ainda não tiver uma.
+
+2. Conecte seu repositório do GitHub ao Render.
+
+3. Crie um novo **Web Service** no Render e selecione o repositório do projeto.
+
+4. Configure o serviço com as seguintes configurações:
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `gunicorn -c gunicorn_config.py app:app`
+   - **Environment Variables:** Adicione as variáveis do arquivo `.env.example`
+
+5. Clique em **Create Web Service** para implantar a aplicação.
+
+6. Após a implantação, acesse a URL fornecida pelo Render.
+
 ## Uso
 
-1. Registre-se como um novo cliente pelo `index.html` (aba Registro).
-2. Faça login com suas credenciais.
+1. Acesse a URL da aplicação implantada.
+2. Registre-se como um novo cliente (aba Registro).
+3. Faça login com suas credenciais.
+4. Gerencie seus outdoors e anúncios através da interface administrativa.
+
+## Variáveis de Ambiente
+
+Certifique-se de configurar as seguintes variáveis de ambiente no arquivo `.env` ou no painel do Render:
+
+- `FLASK_APP`: Nome do arquivo da aplicação (geralmente `app.py`)
+- `FLASK_ENV`: Ambiente de execução (`development` ou `production`)
+- `SECRET_KEY`: Chave secreta para a aplicação
+- `DATABASE_URL`: URL de conexão com o banco de dados
+- `UPLOAD_FOLDER`: Pasta para armazenar uploads
+- `JWT_SECRET_KEY`: Chave secreta para tokens JWT
+- `CORS_ORIGINS`: Origens permitidas para CORS (separadas por vírgula)
 3. Cadastre e gerencie seus outdoors e anúncios.
 4. Vincule anúncios aos outdoors conforme necessário.
 

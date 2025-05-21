@@ -43,6 +43,14 @@ coverage/
 # Database
 *.db
 *.sqlite3
+*.json  # Adiciona arquivos JSON de banco de dados
+
+# Uploads
+uploads/
+
+# Arquivos de ambiente
+.env*
+!.env.example
 
 # Logs
 logs/

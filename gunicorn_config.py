@@ -1,14 +1,19 @@
+import os
+
 # Nome do arquivo da aplicação
 app = 'app:app'
 
-# Número de workers (2 * núcleos da CPU + 1)
-workers = 2
+# Número de workers (1 worker para evitar problemas com o SQLite)
+workers = 1
+
+# Usar o worker do eventlet para WebSockets
+worker_class = 'eventlet'
 
 # Número de threads por worker
-threads = 2
+threads = 4
 
-# Endereço e porta
-bind = '0.0.0.0:10000'
+# Endereço e porta (usar a porta da variável de ambiente PORT)
+bind = '0.0.0.0:' + str(int(os.environ.get('PORT', '10000')))
 
 # Timeout (aumentado para evitar timeouts em operações mais longas)
 timeout = 120
@@ -18,7 +23,13 @@ keepalive = 5
 loglevel = 'info'
 
 # Acesso ao log
-accesslog = '-'  # Saída para stdout
+accesslog = '-'
+
+# Capturar erros
+capture_output = True
+
+# Habilitar o reload em desenvolvimento
+reload = os.environ.get('FLASK_ENV') == 'development'
 access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(L)s'
 
 # Log de erros
